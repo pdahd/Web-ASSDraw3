@@ -1,0 +1,2199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Web-ASSDraw3 — ASS 矢量图形在线编辑器</title>
+    <style>
+        :root {
+            --bg-color: #383838;
+            --panel-bg: #474747;
+            --border-light: #7a7a7a;
+            --border-dark: #1e1e1e;
+            --accent-color: #0088ff;
+            --accent-hover: #0077dd;
+            --text-color: #f0f0f0;
+            --btn-bg: #525252;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(to bottom, #5a5a5a, #3d3d3d);
+            padding: 6px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+            border-top: 1px solid #888888;
+            border-bottom: 2px solid #1a1a1a;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            flex-shrink: 0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: bold;
+            font-size: 16px;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+        }
+
+        .brand span {
+            background-color: var(--accent-color);
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Enhanced 3D Embossed Buttons */
+        .btn {
+            background: linear-gradient(to bottom, #636363, #424242);
+            color: #ffffff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.1s ease-in-out;
+            border-top: 1px solid #999999;
+            border-left: 1px solid #999999;
+            border-bottom: 2px solid #151515;
+            border-right: 2px solid #151515;
+            box-shadow: 1px 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .btn:hover {
+            background: linear-gradient(to bottom, #727272, #4d4d4d);
+            border-top: 1px solid #aaaaaa;
+            border-left: 1px solid #aaaaaa;
+            border-bottom: 2px solid #0d0d0d;
+            border-right: 2px solid #0d0d0d;
+        }
+
+        .btn:active {
+            background: linear-gradient(to bottom, #303030, #454545);
+            border-top: 2px solid #111111;
+            border-left: 2px solid #111111;
+            border-bottom: 1px solid #777777;
+            border-right: 1px solid #777777;
+            box-shadow: inset 1px 1px 3px rgba(0,0,0,0.8);
+            transform: translateY(1px);
+        }
+
+        .btn.active {
+            background: linear-gradient(to bottom, #0099ff, #0055aa);
+            border-top: 1px solid #80ccff;
+            border-left: 1px solid #80ccff;
+            border-bottom: 2px solid #002b55;
+            border-right: 2px solid #002b55;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 1px 2px 4px rgba(0,0,0,0.6);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: #555;
+            box-shadow: none;
+            background: #3d3d3d;
+        }
+
+        /* Main Workspace */
+        .workspace {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+            height: calc(100vh - 46px);
+        }
+
+        /* Canvas Container */
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background-color: #222222;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Controls / Side Panel */
+        .side-panel {
+            width: 320px;
+            background-color: var(--panel-bg);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 12px;
+            padding-bottom: 150px;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            border-left: 1px solid var(--border-light);
+            box-shadow: -2px 0 6px rgba(0,0,0,0.4);
+            height: 100%;
+            max-height: 100%;
+            flex-shrink: 0;
+        }
+
+        .panel-group {
+            background: linear-gradient(to bottom, #424242, #383838);
+            border-radius: 6px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-top: 1px solid #666666;
+            border-left: 1px solid #666666;
+            border-bottom: 2px solid #1c1c1c;
+            border-right: 2px solid #1c1c1c;
+            box-shadow: 1px 2px 4px rgba(0,0,0,0.4);
+            flex-shrink: 0;
+        }
+
+        .panel-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #ddd;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #505050;
+            padding-bottom: 4px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 12px;
+            color: #eee;
+            min-width: 65px;
+        }
+
+        input[type="text"], input[type="number"], textarea, select {
+            background-color: #242424;
+            color: #fff;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 100%;
+            user-select: text;
+            border-top: 2px solid #1a1a1a;
+            border-left: 2px solid #1a1a1a;
+            border-bottom: 1px solid #555;
+            border-right: 1px solid #555;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 75px;
+            font-family: monospace;
+            line-height: 1.4;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            accent-color: var(--accent-color);
+        }
+
+        input[type="color"] {
+            border: 1px solid #666;
+            background: #2b2b2b;
+            border-radius: 3px;
+            cursor: pointer;
+            width: 32px;
+            height: 24px;
+        }
+
+        /* Floating Info Tag */
+        .info-tag {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background-color: rgba(20, 20, 20, 0.85);
+            color: #00ffcc;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.5);
+        }
+
+        /* ===== Node Touchpad ===== */
+        .tp-wrap {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .tp-wrap.open { display: flex; }
+        .tp-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #ddd;
+        }
+        .tp-header .btn { padding: 2px 6px; font-size: 11px; }
+        .tp-area {
+            position: relative;
+            height: 200px;
+            min-height: 80px;
+            flex: 1;
+            background: repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 20px),
+                        repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 20px),
+                        #1c1c1c;
+            border-top: 2px solid #111;
+            border-left: 2px solid #111;
+            border-bottom: 1px solid #666;
+            border-right: 1px solid #666;
+            border-radius: 6px;
+            touch-action: none;           /* 阻止浏览器在触控板内平移/捏合缩放/双击缩放 */
+            overscroll-behavior: contain;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            cursor: crosshair;
+            overflow: hidden;
+        }
+        .tp-area.active { box-shadow: inset 0 0 0 2px #ff3366; }
+        .tp-area.disabled { opacity: 0.55; }
+        .tp-hint {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #888;
+            pointer-events: none;
+            line-height: 1.5;
+        }
+        .tp-dot {
+            position: absolute;
+            width: 18px; height: 18px;
+            margin: -9px 0 0 -9px;
+            border-radius: 50%;
+            border: 2px solid #ff3366;
+            background: rgba(255,51,102,0.25);
+            pointer-events: none;
+            display: none;
+        }
+        .tp-info {
+            font-size: 11px;
+            font-family: monospace;
+            color: #00ffcc;
+            background: #222;
+            padding: 4px;
+            border-radius: 3px;
+        }
+        .tp-wrap.floating {
+            position: fixed;
+            z-index: 1000;
+            background: linear-gradient(to bottom, #4a4a4a, #383838);
+            padding: 8px;
+            border-radius: 8px;
+            border-top: 1px solid #888;
+            border-left: 1px solid #888;
+            border-bottom: 2px solid #111;
+            border-right: 2px solid #111;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.7);
+            min-width: 200px;
+            min-height: 180px;
+        }
+        .tp-wrap.floating .tp-header {
+            cursor: move;
+            touch-action: none;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #555;
+        }
+        .tp-wrap.floating .tp-area { height: auto; }
+        .tp-resize {
+            display: none;
+            position: absolute;
+            right: 0; bottom: 0;
+            width: 22px; height: 22px;
+            cursor: nwse-resize;
+            touch-action: none;
+            background: linear-gradient(135deg, transparent 50%, #00ffcc 50%, #00ffcc 58%, transparent 58%, transparent 70%, #00ffcc 70%, #00ffcc 78%, transparent 78%);
+            border-bottom-right-radius: 8px;
+        }
+        .tp-wrap.floating .tp-resize { display: block; }
+
+        /* ===== Side Panel Collapse (右边栏向右边缘折叠) ===== */
+        .side-panel {
+            transition: margin-right 0.25s ease;
+        }
+        .side-panel.collapsed {
+            margin-right: -321px;   /* 320px 宽度 + 1px 左边框，整体滑出右边缘 */
+            box-shadow: none;
+            visibility: hidden;
+            transition: margin-right 0.25s ease, visibility 0s linear 0.25s;
+        }
+        .panel-toggle {
+            position: absolute;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+            z-index: 5;
+            width: 22px;
+            height: 64px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(to right, #5a5a5a, #3d3d3d);
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            border-top: 1px solid #999;
+            border-left: 1px solid #999;
+            border-bottom: 2px solid #151515;
+            border-right: none;
+            border-radius: 6px 0 0 6px;
+            box-shadow: -2px 2px 5px rgba(0,0,0,0.5);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            touch-action: manipulation;
+            opacity: 0.85;
+        }
+        .panel-toggle:hover { opacity: 1; background: linear-gradient(to right, #727272, #4d4d4d); }
+        .panel-toggle:active { background: linear-gradient(to right, #303030, #454545); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            Web-ASSDraw3 <span>v1.8</span>
+        </div>
+        <div class="toolbar">
+            <button class="btn active" id="toolMove" title="选择与拖动单节点 (M)">🖱️ 选择或拖动节点</button>
+            <button class="btn" id="toolMoveContour" title="拖动单个独立图形轮廓">🖐️ 拖动图形轮廓</button>
+            <button class="btn" id="toolStartM" title="开启新独立轮廓起点 (MoveTo m)">📍 起点 (m)</button>
+            <button class="btn" id="toolLine" title="绘制直线 (L)">📏 直线 (l)</button>
+            <button class="btn" id="toolBezier" title="绘制三阶贝塞尔曲线 (B)">➰ 贝塞尔 (b)</button>
+            <button class="btn" id="toolPan" title="按住拖动画布视角 (Hand)">✋ 平移画布</button>
+            <div style="width: 1px; height: 20px; background: #666; margin: 0 4px;"></div>
+            <button class="btn" id="btnUndo" title="撤销操作 (Ctrl+Z)">↩️ 撤销</button>
+            <button class="btn" id="btnRedo" title="重做操作 (Ctrl+Y)">↪️ 重做</button>
+            <button class="btn" id="btnDeleteNode" title="删除选中节点 (Delete)">❌ 删除节点</button>
+            <div style="width: 1px; height: 20px; background: #666; margin: 0 4px;"></div>
+            <button class="btn" id="btnResetView">🎯 重置视角</button>
+            <button class="btn" id="btnClearCanvas">🗑️ 清空画布</button>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="mainCanvas"></canvas>
+            <div class="info-tag" id="infoTag">X: 0 | Y: 0 | 画布缩放: 100% | 背景图缩放: 100% | 节点数: 0</div>
+            <button class="panel-toggle" id="btnTogglePanel" title="折叠右边栏（画布区更宽敞）">▶</button>
+        </div>
+
+        <div class="side-panel" id="sidePanel">
+            <!-- ASS Code Group -->
+            <div class="panel-group">
+                <div class="panel-title">
+                    ASS 矢量代码 (DRAWING CODE)
+                    <button class="btn" id="btnCopyCode" style="padding: 2px 6px; font-size: 11px;">复制</button>
+                </div>
+                <textarea id="assCodeInput" placeholder="在此粘贴或修改 ASS 矢量代码，例如：&#10;m 0 0 l 100 0 100 100 0 100 c m 200 200 l 300 200 300 300 c"></textarea>
+                <div class="row">
+                    <button class="btn" id="btnApplyCode" style="width: 100%; justify-content: center;">解析代码至画布 ➔</button>
+                </div>
+            </div>
+
+            <!-- Node Touchpad (for touch / stylus users) -->
+            <div class="panel-group" id="touchpadGroup">
+                <div class="panel-title">
+                    节点触控板 (TOUCHPAD)
+                    <button class="btn" id="btnTouchpadToggle" style="padding: 2px 6px; font-size: 11px;">▼ 展开</button>
+                </div>
+                <div id="tpFloatingNote" style="display:none; font-size: 11px; color: #aaa;">触控板已悬浮，可拖动标题栏移动、拖动右下角调整大小。</div>
+                <div id="tpDock">
+                    <div class="tp-wrap" id="tpWrap">
+                        <div class="tp-header" id="tpHeader">
+                            <span>🖐️ 节点触控板</span>
+                            <span style="display:flex; gap:4px;">
+                                <button class="btn" id="btnTpFloat" title="悬浮 / 停靠到右边栏">📌 悬浮</button>
+                                <button class="btn" id="btnTpClose" title="收起触控板">✕</button>
+                            </span>
+                        </div>
+                        <div class="tp-info" id="tpInfo">未选中节点</div>
+                        <div class="tp-area disabled" id="tpArea">
+                            <div class="tp-hint" id="tpHint">先在画布上选中一个节点（红色），<br>再在此区域滑动手指/笔尖来移动它</div>
+                            <div class="tp-dot" id="tpDot"></div>
+                        </div>
+                        <div class="row">
+                            <label style="min-width: 50px;">灵敏度:</label>
+                            <input type="range" id="tpSensitivity" min="0.1" max="3" step="0.1" value="1">
+                            <span id="tpSensText" style="font-size: 11px; color: #aaa; min-width: 34px;">1.0x</span>
+                        </div>
+                        <div class="tp-resize" id="tpResize"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas Zoom Section -->
+            <div class="panel-group">
+                <div class="panel-title">画布视角缩放 (CANVAS ZOOM)</div>
+                <div class="row">
+                    <button class="btn" id="btnZoomIn" style="flex: 1; justify-content: center;">🔎+ 放大</button>
+                    <button class="btn" id="btnZoomOut" style="flex: 1; justify-content: center;">🔎- 缩小</button>
+                    <button class="btn" id="btnZoom100" style="flex: 1; justify-content: center;">100%</button>
+                </div>
+            </div>
+
+            <!-- Drawing Style & Display Options -->
+            <div class="panel-group">
+                <div class="panel-title">样式与显示设置 (STYLE & DISPLAY)</div>
+                <div class="row">
+                    <label>填充颜色:</label>
+                    <input type="color" id="fillColor" value="#0088ff">
+                    <label style="min-width: 45px;">透明度:</label>
+                    <input type="range" id="fillOpacity" min="0" max="1" step="0.05" value="0.5">
+                </div>
+                <div class="row">
+                    <label>描边颜色:</label>
+                    <input type="color" id="strokeColor" value="#ffffff">
+                    <label style="min-width: 45px;">线宽:</label>
+                    <input type="range" id="strokeWidth" min="1" max="10" value="2">
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkShowGuides" checked> 显示平行/垂直橙色对齐线</label>
+                    <input type="color" id="guideColor" value="#ff9900" title="对齐辅助线颜色">
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkShowBBox"> 显示原版外框包围盒与中心十字</label>
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkShowAxes"> 显示中心坐标轴</label>
+                    <input type="color" id="axesColor" value="#0088ff" title="中心坐标轴颜色">
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkShowGrid"> 显示背景平铺网格</label>
+                    <input type="color" id="gridColor" value="#444455" title="网格线颜色">
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkMagneticSnap" checked> 开启节点触控近距离吸附</label>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnManualSnap" style="width: 100%; justify-content: center;" title="触屏专用：选中节点后，单击此按钮将其吸附到最近的其他节点上，并提示吸附结果">🧲 单击吸附选中节点至最近节点</button>
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkShowRulers" checked> 显示边缘标尺 (Rulers)</label>
+                </div>
+                <div class="row">
+                    <label><input type="checkbox" id="chkClosePath" checked> 自动闭合曲线 (c)</label>
+                </div>
+            </div>
+
+            <!-- Tracing Background Image -->
+            <div class="panel-group">
+                <div class="panel-title">背景描摹图片 (TRACING IMAGE)</div>
+                <div class="row">
+                    <input type="file" id="imgLoader" accept="image/*">
+                </div>
+                <div id="imgControls" style="display: none; flex-direction: column; gap: 8px;">
+                    <div id="imgDimText" style="font-size: 11px; color: #00ffcc; background: #222; padding: 4px; border-radius: 3px; font-family: monospace;">
+                        原尺寸: - | 缩放后: -
+                    </div>
+                    <div class="row">
+                        <label>图片透明度:</label>
+                        <input type="range" id="imgOpacity" min="0" max="1" step="0.05" value="0.4">
+                    </div>
+                    <div class="row">
+                        <label>独立缩放:</label>
+                        <button class="btn" id="btnImgZoomIn" style="flex: 1; justify-content: center;">🖼️+ 放大</button>
+                        <button class="btn" id="btnImgZoomOut" style="flex: 1; justify-content: center;">🖼️- 缩小</button>
+                        <button class="btn" id="btnImgReset" style="flex: 1; justify-content: center;">重置</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Vector PNG Section -->
+            <div class="panel-group">
+                <div class="panel-title">导出矢量图形 PNG (EXPORT PNG)</div>
+                <div class="row">
+                    <label>导出宽度:</label>
+                    <input type="number" id="expWidth" value="1920" min="10" max="8192">
+                    <span style="font-size: 11px; color: #aaa;">px</span>
+                </div>
+                <div class="row">
+                    <label>计算高度:</label>
+                    <input type="text" id="expHeight" value="自动计算" readonly style="background: #1e1e1e; color: #888;">
+                </div>
+                <div class="row">
+                    <label>填充颜色:</label>
+                    <input type="color" id="expFillColor" value="#0088ff">
+                    <span style="font-size: 11px; color: #aaa;">(透明背景)</span>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnExportPng" style="width: 100%; justify-content: center; background: linear-gradient(to bottom, #00aa66, #007744);">💾 保存为 PNG 图片</button>
+                </div>
+            </div>
+
+            <!-- Operations & Vector Offset -->
+            <div class="panel-group">
+                <div class="panel-title">图形变换与微移 (TRANSFORM & SHIFT)</div>
+                <div class="row">
+                    <button class="btn" id="btnReverseContourSide" style="flex: 1; justify-content: center; background: linear-gradient(to bottom, #d97706, #b45309);">🔄 颠倒轮廓方向(挖空)</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnScaleUp" style="flex: 1; justify-content: center;">放大 1.2x</button>
+                    <button class="btn" id="btnScaleDown" style="flex: 1; justify-content: center;">缩小 0.8x</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnFlipH" style="flex: 1; justify-content: center;">水平翻转</button>
+                    <button class="btn" id="btnFlipV" style="flex: 1; justify-content: center;">垂直翻转</button>
+                </div>
+                <!-- Vector Position Shift Group -->
+                <div style="border-top: 1px solid #555; padding-top: 6px; margin-top: 4px;">
+                    <div style="font-size: 11px; color: #aaa; margin-bottom: 4px;">全图坐标整体平移:</div>
+                    <div class="row">
+                        <label style="min-width: 45px;">步长:</label>
+                        <input type="number" id="shiftStep" value="10" min="1" max="500" style="width: 60px;">
+                        <span style="font-size: 11px; color: #aaa;">px</span>
+                    </div>
+                    <div class="row" style="justify-content: center; gap: 4px; margin-top: 6px;">
+                        <button class="btn" id="btnShiftLeft" title="向左移动">⬅️</button>
+                        <button class="btn" id="btnShiftUp" title="向上移动">⬆️</button>
+                        <button class="btn" id="btnShiftDown" title="向下移动">⬇️</button>
+                        <button class="btn" id="btnShiftRight" title="向右移动">➡️</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ASS Path Data Structures
+        class PathNode {
+            constructor(type, points) {
+                this.type = type; // 'm', 'l', 'b', 's', 'n'
+                this.points = points; // array of {x, y}
+            }
+            clone() {
+                return new PathNode(this.type, this.points.map(p => ({x: p.x, y: p.y})));
+            }
+        }
+
+        // Global State
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+
+        let nodes = []; // List of PathNode
+        let isClosed = true;
+
+        // Undo / Redo History Stack
+        let undoStack = [];
+        let redoStack = [];
+
+        function saveUndoState() {
+            const state = {
+                nodes: nodes.map(n => n.clone()),
+                isClosed: isClosed
+            };
+            undoStack.push(state);
+            if (undoStack.length > 50) undoStack.shift();
+            redoStack = [];
+            updateUndoRedoUI();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const currentState = {
+                nodes: nodes.map(n => n.clone()),
+                isClosed: isClosed
+            };
+            redoStack.push(currentState);
+            const prevState = undoStack.pop();
+            nodes = prevState.nodes.map(n => n.clone());
+            isClosed = prevState.isClosed;
+            document.getElementById('chkClosePath').checked = isClosed;
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            selectedContourIdx = -1;
+            updateCodeFromNodes(false);
+            updateUndoRedoUI();
+            render();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const currentState = {
+                nodes: nodes.map(n => n.clone()),
+                isClosed: isClosed
+            };
+            undoStack.push(currentState);
+            const nextState = redoStack.pop();
+            nodes = nextState.nodes.map(n => n.clone());
+            isClosed = nextState.isClosed;
+            document.getElementById('chkClosePath').checked = isClosed;
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            selectedContourIdx = -1;
+            updateCodeFromNodes(false);
+            updateUndoRedoUI();
+            render();
+        }
+
+        function updateUndoRedoUI() {
+            document.getElementById('btnUndo').disabled = (undoStack.length === 0);
+            document.getElementById('btnRedo').disabled = (redoStack.length === 0);
+        }
+
+        // Viewport Transform (Canvas Zoom/Pan)
+        let scale = 1.0;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        // Mode: 'move', 'move_contour', 'start_m', 'line', 'bezier', 'pan'
+        let currentMode = 'move';
+        let isDragging = false;
+        let selectedNodeIdx = -1;
+        let selectedPtIdx = -1;
+        let selectedContourIdx = -1;
+        let lastDragMousePt = { x: 0, y: 0 };
+        let snappedNodePos = null;
+
+        // Touchpad drag state (separate from canvas isDragging)
+        let tpDragging = false;
+
+        // Smart Alignment Reference Guides (Persistent + Tolerance)
+        let persistentGuides = []; // Array of { type: 'h'|'v', pos: number }
+        let currentActiveGuides = [];
+        let showGuides = true;
+        let showBBox = false;
+        let guideColor = '#ff9900';
+
+        // Options
+        let enableMagneticSnap = true;
+
+        // Background Image Layer
+        let bgImg = null;
+        let bgImgOpacity = 0.4;
+        let bgImgScale = 1.0;
+
+        // Style Settings
+        let fillColor = '#0088ff';
+        let fillOpacity = 0.5;
+        let strokeColor = '#ffffff';
+        let strokeWidth = 2;
+        let showGrid = false;
+        let gridColor = '#444455';
+        let gridOpacity = 0.3;
+        let showAxes = false;
+        let axesColor = '#0088ff';
+        let showRulers = true;
+
+        // === HiDPI (Retina) Support ===
+        // viewW / viewH 是画布的 CSS 逻辑尺寸（所有绘图坐标都基于它），
+        // canvas.width / canvas.height 则是乘以 devicePixelRatio 后的物理像素尺寸，
+        // 这样在高分屏（如 1200x1920 平板）上线条与节点不会被拉伸放大而发虚。
+        let viewW = 0;
+        let viewH = 0;
+        let viewDpr = 1;
+
+        // Resize Canvas
+        function resizeCanvas() {
+            viewDpr = window.devicePixelRatio || 1;
+            viewW = container.clientWidth;
+            viewH = container.clientHeight;
+            canvas.width = Math.max(1, Math.round(viewW * viewDpr));
+            canvas.height = Math.max(1, Math.round(viewH * viewDpr));
+            canvas.style.width = viewW + 'px';
+            canvas.style.height = viewH + 'px';
+            if (offsetX === 0 && offsetY === 0) {
+                offsetX = viewW / 2;
+                offsetY = viewH / 2;
+            }
+            render();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // === Side Panel Collapse Toggle (右边栏折叠开关) ===
+        // 折叠/展开只改变画布容器宽度，不触发 window resize，
+        // 因此用 ResizeObserver 监听容器尺寸变化，复用原有 resizeCanvas()（含高分屏适配）。
+        (function () {
+            const sidePanel = document.getElementById('sidePanel');
+            const btnToggle = document.getElementById('btnTogglePanel');
+            let panelCollapsed = false;
+
+            function applyPanelState() {
+                sidePanel.classList.toggle('collapsed', panelCollapsed);
+                btnToggle.innerText = panelCollapsed ? '◀' : '▶';
+                btnToggle.title = panelCollapsed ? '展开右边栏' : '折叠右边栏（画布区更宽敞）';
+            }
+
+            btnToggle.addEventListener('pointerdown', (e) => e.stopPropagation());
+            btnToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                panelCollapsed = !panelCollapsed;
+                applyPanelState();
+            });
+
+            if (typeof ResizeObserver !== 'undefined') {
+                let rafId = 0;
+                new ResizeObserver(() => {
+                    if (rafId) return;
+                    rafId = requestAnimationFrame(() => {
+                        rafId = 0;
+                        if (container.clientWidth !== viewW || container.clientHeight !== viewH) {
+                            resizeCanvas();
+                        }
+                    });
+                }).observe(container);
+            } else {
+                // 兜底：不支持 ResizeObserver 的旧浏览器，动画结束后手动刷新一次
+                sidePanel.addEventListener('transitionend', (e) => {
+                    if (e.propertyName === 'margin-right') resizeCanvas();
+                });
+            }
+
+            applyPanelState();
+        })();
+
+        // Coordinate Conversions
+        function screenToWorld(sx, sy) {
+            return {
+                x: Math.round((sx - offsetX) / scale),
+                y: Math.round((sy - offsetY) / scale)
+            };
+        }
+
+        function worldToScreen(wx, wy) {
+            return {
+                x: wx * scale + offsetX,
+                y: wy * scale + offsetY
+            };
+        }
+
+        // Initial Demo Path
+        function initDemoPath() {
+            nodes = [
+                new PathNode('m', [{x: -50, y: -50}]),
+                new PathNode('b', [{x: -20, y: -100}, {x: 20, y: -100}, {x: 50, y: -50}]),
+                new PathNode('b', [{x: 80, y: 0}, {x: 80, y: 50}, {x: 0, y: 80}]),
+                new PathNode('b', [{x: -80, y: 50}, {x: -80, y: 0}, {x: -50, y: -50}])
+            ];
+            updateCodeFromNodes(false);
+            updateUndoRedoUI();
+        }
+
+        // Get Contour Subpaths List
+        function getContours() {
+            let contours = [];
+            let currentContour = [];
+            for (let i = 0; i < nodes.length; i++) {
+                if (nodes[i].type === 'm' && currentContour.length > 0) {
+                    contours.push(currentContour);
+                    currentContour = [];
+                }
+                currentContour.push(i);
+            }
+            if (currentContour.length > 0) contours.push(currentContour);
+            return contours;
+        }
+
+        // Reverse Contour Direction (Hollow out toggle)
+        function reverseSelectedContour() {
+            const contours = getContours();
+            if (contours.length === 0) {
+                alert('画布上没有可颠倒方向的矢量图形轮廓！');
+                return;
+            }
+
+            let targetCIdx = selectedContourIdx;
+            if (targetCIdx < 0 && selectedNodeIdx >= 0) {
+                for (let c = 0; c < contours.length; c++) {
+                    if (contours[c].includes(selectedNodeIdx)) {
+                        targetCIdx = c;
+                        break;
+                    }
+                }
+            }
+            if (targetCIdx < 0 || targetCIdx >= contours.length) {
+                targetCIdx = contours.length - 1; // Default to last created contour
+            }
+
+            saveUndoState();
+            let nodeIndices = contours[targetCIdx];
+            let oldSubNodes = nodeIndices.map(idx => nodes[idx]);
+
+            // Extract path segments with start point, end point, and curve type
+            let segments = [];
+            let currentPt = null;
+
+            for (let n of oldSubNodes) {
+                if (n.type === 'm') {
+                    currentPt = n.points[0];
+                } else if (n.type === 'l') {
+                    segments.push({
+                        type: 'l',
+                        startPt: currentPt,
+                        endPt: n.points[0],
+                        ctrls: []
+                    });
+                    currentPt = n.points[0];
+                } else if (n.type === 'b') {
+                    segments.push({
+                        type: 'b',
+                        startPt: currentPt,
+                        endPt: n.points[2],
+                        ctrls: [n.points[0], n.points[1]]
+                    });
+                    currentPt = n.points[2];
+                }
+            }
+
+            if (segments.length === 0) return;
+
+            // Reconstruct reversed path nodes
+            let newSubNodes = [];
+            let lastSeg = segments[segments.length - 1];
+            newSubNodes.push(new PathNode('m', [{x: lastSeg.endPt.x, y: lastSeg.endPt.y}]));
+
+            for (let k = segments.length - 1; k >= 0; k--) {
+                let seg = segments[k];
+                if (seg.type === 'l') {
+                    newSubNodes.push(new PathNode('l', [{x: seg.startPt.x, y: seg.startPt.y}]));
+                } else if (seg.type === 'b') {
+                    newSubNodes.push(new PathNode('b', [
+                        {x: seg.ctrls[1].x, y: seg.ctrls[1].y},
+                        {x: seg.ctrls[0].x, y: seg.ctrls[0].y},
+                        {x: seg.startPt.x, y: seg.startPt.y}
+                    ]));
+                }
+            }
+
+            // Replace nodeIndices in main `nodes` array
+            nodes.splice(nodeIndices[0], nodeIndices.length, ...newSubNodes);
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            selectedContourIdx = targetCIdx;
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        // Generate ASS Code Text from Nodes array
+        function updateCodeFromNodes(addHistory = true) {
+            if (addHistory) saveUndoState();
+            let code = "";
+            for (let n of nodes) {
+                code += n.type + " ";
+                for (let p of n.points) {
+                    code += Math.round(p.x) + " " + Math.round(p.y) + " ";
+                }
+            }
+            if (isClosed && nodes.length > 0) code += "c";
+            document.getElementById('assCodeInput').value = code.trim();
+            updateExportHeightEstimate();
+            updateInfoTag();
+        }
+
+        // Parse ASS Code Text into Nodes array
+        function parseAssCode(codeStr) {
+            saveUndoState();
+            nodes = [];
+            const tokens = codeStr.trim().split(/\s+/);
+            let i = 0;
+            let currentType = 'm';
+
+            while (i < tokens.length) {
+                let token = tokens[i].toLowerCase();
+                if (['m', 'n', 'l', 'b', 's'].includes(token)) {
+                    currentType = token === 'n' ? 'm' : token;
+                    i++;
+                }
+
+                if (i >= tokens.length) break;
+
+                if (currentType === 'm' || currentType === 'l') {
+                    if (i + 1 < tokens.length && !isNaN(tokens[i]) && !isNaN(tokens[i+1])) {
+                        let x = parseFloat(tokens[i]);
+                        let y = parseFloat(tokens[i+1]);
+                        nodes.push(new PathNode(currentType, [{x, y}]));
+                        i += 2;
+                    } else { i++; }
+                } else if (currentType === 'b') {
+                    if (i + 5 < tokens.length && !isNaN(tokens[i])) {
+                        let pts = [];
+                        for (let k = 0; k < 6; k += 2) {
+                            pts.push({ x: parseFloat(tokens[i+k]), y: parseFloat(tokens[i+k+1]) });
+                        }
+                        nodes.push(new PathNode('b', pts));
+                        i += 6;
+                    } else { i++; }
+                } else if (token === 'c') {
+                    isClosed = true;
+                    i++;
+                } else {
+                    i++;
+                }
+            }
+            updateExportHeightEstimate();
+            render();
+            updateInfoTag();
+        }
+
+        // Calculate Vector Path Bounding Box
+        function getBoundingBox(targetNodeIndices = null) {
+            if (nodes.length === 0) return null;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            let checkList = targetNodeIndices ? targetNodeIndices.map(idx => nodes[idx]) : nodes;
+
+            for (let n of checkList) {
+                if (!n) continue;
+                for (let p of n.points) {
+                    if (p.x < minX) minX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y > maxY) maxY = p.y;
+                }
+            }
+            if (minX === Infinity || maxX === minX || maxY === minY) return null;
+            return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+        }
+
+        function updateExportHeightEstimate() {
+            const bbox = getBoundingBox();
+            const expW = parseInt(document.getElementById('expWidth').value) || 1920;
+            if (bbox) {
+                const expH = Math.round(expW * (bbox.height / bbox.width));
+                document.getElementById('expHeight').value = `${expH} px (比例 1:${(bbox.height/bbox.width).toFixed(2)})`;
+            } else {
+                document.getElementById('expHeight').value = "自动计算";
+            }
+        }
+
+        // Delete Currently Selected Node
+        function deleteSelectedNode() {
+            if (selectedNodeIdx < 0 || selectedNodeIdx >= nodes.length) {
+                alert('请先在画布上点击选中要删除的节点！');
+                return;
+            }
+            saveUndoState();
+            nodes.splice(selectedNodeIdx, 1);
+            if (nodes.length > 0 && nodes[0].type !== 'm') {
+                nodes[0].type = 'm';
+            }
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        // Check if a point exactly overlaps another point in the path
+        // (used to render fully-overlapped nodes in green)
+        function isPointOverlapped(nodeIdx, ptIdx) {
+            const p = nodes[nodeIdx] && nodes[nodeIdx].points[ptIdx];
+            if (!p) return false;
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = 0; j < nodes[i].points.length; j++) {
+                    if (i === nodeIdx && j === ptIdx) continue;
+                    const q = nodes[i].points[j];
+                    if (Math.round(q.x) === Math.round(p.x) && Math.round(q.y) === Math.round(p.y)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Render Main View
+        function render() {
+            // HiDPI: 每帧重置变换矩阵，把 1 个绘图单位映射到 dpr 个物理像素
+            ctx.setTransform(viewDpr, 0, 0, viewDpr, 0, 0);
+            ctx.clearRect(0, 0, viewW, viewH);
+
+            // 1. Optional Flat Grid Lines (Default Unchecked/Hidden)
+            if (showGrid) {
+                ctx.save();
+                ctx.strokeStyle = gridColor;
+                ctx.globalAlpha = gridOpacity;
+                ctx.lineWidth = 1;
+
+                const stepWorld = 50;
+                const stepScreen = stepWorld * scale;
+
+                if (stepScreen > 8) {
+                    let startX = offsetX % stepScreen;
+                    for (let x = startX; x < viewW; x += stepScreen) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, viewH);
+                        ctx.stroke();
+                    }
+
+                    let startY = offsetY % stepScreen;
+                    for (let y = startY; y < viewH; y += stepScreen) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(viewW, y);
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            }
+
+            // 2. Center Axes
+            if (showAxes) {
+                ctx.save();
+                ctx.strokeStyle = axesColor;
+                ctx.globalAlpha = 0.7;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, Math.round(offsetY) + 0.5); ctx.lineTo(viewW, Math.round(offsetY) + 0.5);
+                ctx.moveTo(Math.round(offsetX) + 0.5, 0); ctx.lineTo(Math.round(offsetX) + 0.5, viewH);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 3. Persistent + Active Smart Alignment Reference Guides
+            if (showGuides) {
+                let allGuides = [...persistentGuides, ...currentActiveGuides];
+                if (allGuides.length > 0) {
+                    ctx.save();
+                    ctx.strokeStyle = guideColor;
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([6, 4]);
+
+                    for (let guide of allGuides) {
+                        ctx.beginPath();
+                        if (guide.type === 'v') {
+                            let scrX = Math.round(guide.pos * scale + offsetX) + 0.5;
+                            ctx.moveTo(scrX, 0);
+                            ctx.lineTo(scrX, viewH);
+                        } else if (guide.type === 'h') {
+                            let scrY = Math.round(guide.pos * scale + offsetY) + 0.5;
+                            ctx.moveTo(0, scrY);
+                            ctx.lineTo(viewW, scrY);
+                        }
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            }
+
+            // 4. Draw Background Image
+            if (bgImg) {
+                ctx.save();
+                ctx.globalAlpha = bgImgOpacity;
+                let w = bgImg.width * bgImgScale;
+                let h = bgImg.height * bgImgScale;
+                let scr = worldToScreen(-w / 2, -h / 2);
+                ctx.drawImage(bgImg, scr.x, scr.y, w * scale, h * scale);
+                ctx.restore();
+            }
+
+            // 5. Render ASS Path (Nonzero Winding Rule for Reverse Contour Hollow-Out / Solid Overlaps)
+            if (nodes.length > 0) {
+                ctx.beginPath();
+
+                for (let i = 0; i < nodes.length; i++) {
+                    let n = nodes[i];
+                    if (n.type === 'm') {
+                        let p = worldToScreen(n.points[0].x, n.points[0].y);
+                        ctx.moveTo(p.x, p.y);
+                    } else if (n.type === 'l') {
+                        let p = worldToScreen(n.points[0].x, n.points[0].y);
+                        ctx.lineTo(p.x, p.y);
+                    } else if (n.type === 'b') {
+                        let p1 = worldToScreen(n.points[0].x, n.points[0].y);
+                        let p2 = worldToScreen(n.points[1].x, n.points[1].y);
+                        let p3 = worldToScreen(n.points[2].x, n.points[2].y);
+                        ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+                    }
+                }
+
+                if (isClosed) ctx.closePath();
+
+                // Standard ASS Nonzero Fill Rule
+                ctx.fillStyle = fillColor;
+                ctx.globalAlpha = fillOpacity;
+                ctx.fill('nonzero');
+
+                // Stroke Edge
+                ctx.globalAlpha = 1.0;
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = strokeWidth;
+                ctx.stroke();
+
+                // 6. Classic ASSDraw3 Bounding Box & Center Crosshair
+                if (showBBox) {
+                    renderBoundingBoxAndCrosshair();
+                }
+
+                // 7. Render Control Handles
+                renderControlHandles();
+            }
+
+            // 8. Magnetic Snap Indicator Ring
+            if (snappedNodePos) {
+                let scrP = worldToScreen(snappedNodePos.x, snappedNodePos.y);
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(scrP.x, scrP.y, 14, 0, Math.PI * 2);
+                ctx.strokeStyle = '#00ffaa';
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 9. Draw Coordinate Rulers
+            if (showRulers) {
+                renderRulers();
+            }
+
+            // Keep touchpad status text in sync
+            if (typeof updateTouchpadInfo === 'function') updateTouchpadInfo();
+        }
+
+        // Classic ASSDraw3 Bounding Box & Center Crosshair
+        function renderBoundingBoxAndCrosshair() {
+            let targetIndices = null;
+            if (currentMode === 'move_contour' && selectedContourIdx >= 0) {
+                const contours = getContours();
+                if (selectedContourIdx < contours.length) {
+                    targetIndices = contours[selectedContourIdx];
+                }
+            }
+
+            const bbox = getBoundingBox(targetIndices);
+            if (!bbox) return;
+
+            let pMin = worldToScreen(bbox.minX, bbox.minY);
+            let pMax = worldToScreen(bbox.maxX, bbox.maxY);
+            let pCenter = worldToScreen(bbox.cx, bbox.cy);
+
+            ctx.save();
+            // Bounding Box Rect
+            ctx.strokeStyle = 'rgba(0, 255, 200, 0.75)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(pMin.x, pMin.y, pMax.x - pMin.x, pMax.y - pMin.y);
+
+            // Center Crosshair
+            ctx.strokeStyle = 'rgba(255, 100, 100, 0.85)';
+            ctx.setLineDash([3, 3]);
+            const crossLen = 12;
+
+            ctx.beginPath();
+            ctx.moveTo(pCenter.x - crossLen, pCenter.y); ctx.lineTo(pCenter.x + crossLen, pCenter.y);
+            ctx.moveTo(pCenter.x, pCenter.y - crossLen); ctx.lineTo(pCenter.x, pCenter.y + crossLen);
+            ctx.stroke();
+
+            // Center Circle Anchor
+            ctx.beginPath();
+            ctx.arc(pCenter.x, pCenter.y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4444';
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Render Coordinate Rulers
+        function renderRulers() {
+            const rulerSize = 20;
+            ctx.save();
+
+            ctx.fillStyle = '#1e1e1e';
+            ctx.fillRect(0, 0, viewW, rulerSize);
+            ctx.fillRect(0, 0, rulerSize, viewH);
+
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, rulerSize); ctx.lineTo(viewW, rulerSize);
+            ctx.moveTo(rulerSize, 0); ctx.lineTo(rulerSize, viewH);
+            ctx.stroke();
+
+            ctx.fillStyle = '#2d2d2d';
+            ctx.fillRect(0, 0, rulerSize, rulerSize);
+
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#00ffcc';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            let worldStep = 50;
+            if (scale > 3) worldStep = 10;
+            else if (scale > 1.5) worldStep = 25;
+            else if (scale < 0.4) worldStep = 200;
+            else if (scale < 0.2) worldStep = 500;
+
+            // Render Top Ruler (X Axis)
+            let startXWorld = Math.floor((-offsetX) / scale / worldStep) * worldStep;
+            let endXWorld = Math.ceil((viewW - offsetX) / scale / worldStep) * worldStep;
+
+            for (let wx = startXWorld; wx <= endXWorld; wx += worldStep) {
+                let sx = wx * scale + offsetX;
+                if (sx >= rulerSize && sx <= viewW) {
+                    ctx.strokeStyle = '#aaa';
+                    ctx.beginPath();
+                    ctx.moveTo(sx, rulerSize - 6);
+                    ctx.lineTo(sx, rulerSize);
+                    ctx.stroke();
+                    ctx.fillText(wx, sx, rulerSize / 2);
+                }
+            }
+
+            // Render Left Ruler (Y Axis)
+            ctx.textAlign = 'right';
+            let startYWorld = Math.floor((-offsetY) / scale / worldStep) * worldStep;
+            let endYWorld = Math.ceil((viewH - offsetY) / scale / worldStep) * worldStep;
+
+            for (let wy = startYWorld; wy <= endYWorld; wy += worldStep) {
+                let sy = wy * scale + offsetY;
+                if (sy >= rulerSize && sy <= viewH) {
+                    ctx.strokeStyle = '#aaa';
+                    ctx.beginPath();
+                    ctx.moveTo(rulerSize - 6, sy);
+                    ctx.lineTo(rulerSize, sy);
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.translate(rulerSize / 2 + 2, sy);
+                    ctx.rotate(-Math.PI / 2);
+                    ctx.fillText(wy, 0, 0);
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function renderControlHandles() {
+            const contours = getContours();
+
+            for (let cIdx = 0; cIdx < contours.length; cIdx++) {
+                let nodeIndices = contours[cIdx];
+                let isSelectedContour = (cIdx === selectedContourIdx && currentMode === 'move_contour');
+
+                for (let iIdx of nodeIndices) {
+                    let n = nodes[iIdx];
+
+                    if (n.type === 'b') {
+                        let prevPt = (iIdx > 0) ? nodes[iIdx-1].points[nodes[iIdx-1].points.length - 1] : nodes[0].points[0];
+                        let p0 = worldToScreen(prevPt.x, prevPt.y);
+                        let h1 = worldToScreen(n.points[0].x, n.points[0].y);
+                        let h2 = worldToScreen(n.points[1].x, n.points[1].y);
+                        let p3 = worldToScreen(n.points[2].x, n.points[2].y);
+
+                        ctx.strokeStyle = isSelectedContour ? 'rgba(255, 200, 0, 0.8)' : 'rgba(0, 255, 200, 0.6)';
+                        ctx.lineWidth = isSelectedContour ? 1.5 : 1;
+                        ctx.beginPath();
+                        ctx.moveTo(p0.x, p0.y); ctx.lineTo(h1.x, h1.y);
+                        ctx.moveTo(p3.x, p3.y); ctx.lineTo(h2.x, h2.y);
+                        ctx.stroke();
+
+                        drawControlPoint(h1.x, h1.y, isSelectedContour ? '#ffcc00' : '#00ffcc', 4, iIdx === selectedNodeIdx && selectedPtIdx === 0, isPointOverlapped(iIdx, 0));
+                        drawControlPoint(h2.x, h2.y, isSelectedContour ? '#ffcc00' : '#00ffcc', 4, iIdx === selectedNodeIdx && selectedPtIdx === 1, isPointOverlapped(iIdx, 1));
+                        drawControlPoint(p3.x, p3.y, isSelectedContour ? '#ffea00' : '#ffffff', 6, iIdx === selectedNodeIdx && selectedPtIdx === 2, isPointOverlapped(iIdx, 2));
+                    } else if (n.type === 'm') {
+                        let p = worldToScreen(n.points[0].x, n.points[0].y);
+                        drawControlPoint(p.x, p.y, isSelectedContour ? '#ff3300' : '#ffcc00', 7, iIdx === selectedNodeIdx && selectedPtIdx === 0, isPointOverlapped(iIdx, 0));
+                    } else {
+                        let p = worldToScreen(n.points[0].x, n.points[0].y);
+                        drawControlPoint(p.x, p.y, isSelectedContour ? '#ffea00' : '#ffffff', 6, iIdx === selectedNodeIdx && selectedPtIdx === 0, isPointOverlapped(iIdx, 0));
+                    }
+                }
+            }
+        }
+
+        // Node Color State Logic:
+        // - Fully overlapped nodes render GREEN.
+        // - A node turns RED only while the user is actively pressing/dragging it (canvas or touchpad).
+        // - Releasing an overlapped node without moving it apart restores GREEN.
+        // - Non-overlapped selected nodes keep the original red highlight.
+        function drawControlPoint(x, y, color, radius, isSelected, isOverlapped) {
+            let fill;
+            if (isSelected && (isDragging || tpDragging)) {
+                fill = '#ff3366'; // actively pressed / dragging -> red
+            } else if (isOverlapped) {
+                fill = '#00e04c'; // fully overlapped -> green
+            } else if (isSelected) {
+                fill = '#ff3366'; // normal selected (not overlapped) -> red
+            } else {
+                fill = color;
+            }
+            ctx.beginPath();
+            ctx.arc(x, y, isSelected ? radius + 4 : radius, 0, Math.PI * 2);
+            ctx.fillStyle = fill;
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        // Pointer Events Handling
+        function onPointerDown(e) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            lastDragMousePt = { x: mouseX, y: mouseY };
+
+            if (currentMode === 'pan' || e.button === 1) {
+                isDragging = true;
+                return;
+            }
+
+            const worldPt = screenToWorld(mouseX, mouseY);
+
+            if (currentMode === 'move') {
+                selectedNodeIdx = -1;
+                selectedPtIdx = -1;
+                let minDist = 16;
+
+                for (let i = 0; i < nodes.length; i++) {
+                    let n = nodes[i];
+                    for (let j = 0; j < n.points.length; j++) {
+                        let scrP = worldToScreen(n.points[j].x, n.points[j].y);
+                        let dist = Math.hypot(scrP.x - mouseX, scrP.y - mouseY);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            selectedNodeIdx = i;
+                            selectedPtIdx = j;
+                        }
+                    }
+                }
+
+                if (selectedNodeIdx !== -1) {
+                    saveUndoState();
+                    isDragging = true;
+                }
+            } else if (currentMode === 'move_contour') {
+                selectedContourIdx = -1;
+                let contours = getContours();
+                let minDist = 25;
+
+                for (let cIdx = 0; cIdx < contours.length; cIdx++) {
+                    let nodeIndices = contours[cIdx];
+                    for (let iIdx of nodeIndices) {
+                        let n = nodes[iIdx];
+                        for (let p of n.points) {
+                            let scrP = worldToScreen(p.x, p.y);
+                            let dist = Math.hypot(scrP.x - mouseX, scrP.y - mouseY);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                selectedContourIdx = cIdx;
+                            }
+                        }
+                    }
+                }
+
+                if (selectedContourIdx !== -1) {
+                    saveUndoState();
+                    isDragging = true;
+                }
+                render();
+            } else if (currentMode === 'start_m') {
+                saveUndoState();
+                nodes.push(new PathNode('m', [worldPt]));
+                updateCodeFromNodes(false);
+                setToolMode('line', document.getElementById('toolLine'));
+            } else if (currentMode === 'line') {
+                saveUndoState();
+                if (nodes.length === 0) {
+                    nodes.push(new PathNode('m', [worldPt]));
+                } else {
+                    nodes.push(new PathNode('l', [worldPt]));
+                }
+                updateCodeFromNodes(false);
+            } else if (currentMode === 'bezier') {
+                saveUndoState();
+                if (nodes.length === 0) {
+                    nodes.push(new PathNode('m', [worldPt]));
+                } else {
+                    let prevPt = nodes[nodes.length-1].points[nodes[nodes.length-1].points.length-1];
+                    let h1 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.3), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.3) };
+                    let h2 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.7), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.7) };
+                    nodes.push(new PathNode('b', [h1, h2, worldPt]));
+                }
+                updateCodeFromNodes(false);
+            }
+
+            render();
+        }
+
+        function onPointerMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const dxScreen = mouseX - lastDragMousePt.x;
+            const dyScreen = mouseY - lastDragMousePt.y;
+            lastDragMousePt = { x: mouseX, y: mouseY };
+
+            snappedNodePos = null;
+            currentActiveGuides = [];
+
+            let rawWorldPt = screenToWorld(mouseX, mouseY);
+
+            if (isDragging) {
+                if (currentMode === 'pan' || e.button === 1) {
+                    offsetX += dxScreen;
+                    offsetY += dyScreen;
+                } else if (currentMode === 'move' && selectedNodeIdx !== -1 && selectedPtIdx !== -1) {
+                    let finalWorldPt = { x: rawWorldPt.x, y: rawWorldPt.y };
+
+                    // Magnetic Snapping Logic
+                    if (enableMagneticSnap) {
+                        let snapDistanceScreen = 14;
+                        for (let i = 0; i < nodes.length; i++) {
+                            for (let j = 0; j < nodes[i].points.length; j++) {
+                                if (i === selectedNodeIdx && j === selectedPtIdx) continue;
+                                let targetP = nodes[i].points[j];
+                                let targetScrP = worldToScreen(targetP.x, targetP.y);
+                                let dist = Math.hypot(targetScrP.x - mouseX, targetScrP.y - mouseY);
+                                if (dist < snapDistanceScreen) {
+                                    finalWorldPt = { x: targetP.x, y: targetP.y };
+                                    snappedNodePos = { x: targetP.x, y: targetP.y };
+                                    break;
+                                }
+                            }
+                            if (snappedNodePos) break;
+                        }
+                    }
+
+                    nodes[selectedNodeIdx].points[selectedPtIdx] = finalWorldPt;
+                    updateCodeFromNodes(false);
+                } else if (currentMode === 'move_contour' && selectedContourIdx !== -1) {
+                    const contours = getContours();
+                    if (selectedContourIdx < contours.length) {
+                        let dxWorld = Math.round(dxScreen / scale);
+                        let dyWorld = Math.round(dyScreen / scale);
+                        if (dxWorld !== 0 || dyWorld !== 0) {
+                            let nodeIndices = contours[selectedContourIdx];
+                            for (let iIdx of nodeIndices) {
+                                for (let p of nodes[iIdx].points) {
+                                    p.x += dxWorld;
+                                    p.y += dyWorld;
+                                }
+                            }
+                            updateCodeFromNodes(false);
+                        }
+                    }
+                }
+            }
+
+            // Parallel / Vertical Alignment Tolerance Check (+- 2px)
+            let activePt = null;
+            if (currentMode === 'move' && selectedNodeIdx !== -1 && selectedPtIdx !== -1) {
+                activePt = nodes[selectedNodeIdx].points[selectedPtIdx];
+            } else if (isDragging || currentMode === 'line' || currentMode === 'bezier') {
+                activePt = rawWorldPt;
+            }
+
+            if (showGuides && activePt) {
+                const tol = 2; // 2px tolerance for smooth detection
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = 0; j < nodes[i].points.length; j++) {
+                        if (currentMode === 'move' && i === selectedNodeIdx && j === selectedPtIdx) continue;
+                        let otherP = nodes[i].points[j];
+
+                        if (Math.abs(activePt.x - otherP.x) <= tol) {
+                            if (!currentActiveGuides.some(g => g.type === 'v' && g.pos === otherP.x)) {
+                                currentActiveGuides.push({ type: 'v', pos: otherP.x });
+                            }
+                        }
+                        if (Math.abs(activePt.y - otherP.y) <= tol) {
+                            if (!currentActiveGuides.some(g => g.type === 'h' && g.pos === otherP.y)) {
+                                currentActiveGuides.push({ type: 'h', pos: otherP.y });
+                            }
+                        }
+                    }
+                }
+            }
+
+            render();
+
+            let wpt = screenToWorld(mouseX, mouseY);
+            document.getElementById('infoTag').innerText = `X: ${wpt.x} | Y: ${wpt.y} | 画布缩放: ${Math.round(scale*100)}% | 背景图缩放: ${Math.round(bgImgScale*100)}% | 节点数: ${nodes.length}`;
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+            snappedNodePos = null;
+            currentActiveGuides = [];
+            // Re-render so an overlapped node released without further dragging
+            // reverts from red back to green automatically.
+            render();
+        }
+
+        canvas.addEventListener('pointerdown', onPointerDown);
+        canvas.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+
+        // Canvas Zoom via Wheel
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            let zoomFactor = e.deltaY < 0 ? 1.15 : 0.9;
+            scale *= zoomFactor;
+            scale = Math.max(0.1, Math.min(scale, 20.0));
+            render();
+            updateInfoTag();
+        }, { passive: false });
+
+        // Update Tag Info
+        function updateInfoTag() {
+            document.getElementById('infoTag').innerText = `画布缩放: ${Math.round(scale*100)}% | 背景图缩放: ${Math.round(bgImgScale*100)}% | 节点数: ${nodes.length}`;
+        }
+
+        // Toolbar Mode Switches
+        document.getElementById('toolMove').onclick = function() { setToolMode('move', this); };
+        document.getElementById('toolMoveContour').onclick = function() { setToolMode('move_contour', this); };
+        document.getElementById('toolStartM').onclick = function() { setToolMode('start_m', this); };
+        document.getElementById('toolLine').onclick = function() { setToolMode('line', this); };
+        document.getElementById('toolBezier').onclick = function() { setToolMode('bezier', this); };
+        document.getElementById('toolPan').onclick = function() { setToolMode('pan', this); };
+
+        function setToolMode(mode, btnEl) {
+            currentMode = mode;
+            document.querySelectorAll('.toolbar .btn').forEach(b => {
+                if (['toolMove', 'toolMoveContour', 'toolStartM', 'toolLine', 'toolBezier', 'toolPan'].includes(b.id)) {
+                    b.classList.remove('active');
+                }
+            });
+            btnEl.classList.add('active');
+            render();
+        }
+
+        // Undo / Redo & Delete Listeners
+        document.getElementById('btnUndo').onclick = undo;
+        document.getElementById('btnRedo').onclick = redo;
+        document.getElementById('btnDeleteNode').onclick = deleteSelectedNode;
+        document.getElementById('btnReverseContourSide').onclick = reverseSelectedContour;
+
+        // Manual One-Tap Snap Button (for touch / stylus users whose pen tip
+        // visually covers the node, making it hard to confirm auto-snapping)
+        document.getElementById('btnManualSnap').onclick = function() {
+            if (selectedNodeIdx < 0 || selectedNodeIdx >= nodes.length || selectedPtIdx < 0) {
+                alert('请先用「选择或拖动节点」工具在画布上选中一个节点，再点击此按钮进行吸附！');
+                return;
+            }
+            const curPt = nodes[selectedNodeIdx].points[selectedPtIdx];
+
+            // Find nearest other node point (screen-distance based, generous threshold for touch)
+            let bestDist = Infinity;
+            let bestPt = null;
+            const curScr = worldToScreen(curPt.x, curPt.y);
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = 0; j < nodes[i].points.length; j++) {
+                    if (i === selectedNodeIdx && j === selectedPtIdx) continue;
+                    const targetP = nodes[i].points[j];
+                    const targetScr = worldToScreen(targetP.x, targetP.y);
+                    const dist = Math.hypot(targetScr.x - curScr.x, targetScr.y - curScr.y);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestPt = targetP;
+                    }
+                }
+            }
+
+            const snapThresholdScreen = 40; // generous threshold for stylus/finger precision
+            if (!bestPt || bestDist > snapThresholdScreen) {
+                alert('附近没有可吸附的节点（请先将选中节点拖到目标节点附近，再点击此按钮）。');
+                return;
+            }
+            if (bestDist === 0) {
+                alert('选中节点已与目标节点完全重合（绿色状态），无需再次吸附。');
+                return;
+            }
+
+            saveUndoState();
+            nodes[selectedNodeIdx].points[selectedPtIdx] = { x: bestPt.x, y: bestPt.y };
+            snappedNodePos = { x: bestPt.x, y: bestPt.y };
+            updateCodeFromNodes(false);
+            render();
+            alert(`吸附成功！节点已对齐至坐标 (${Math.round(bestPt.x)}, ${Math.round(bestPt.y)})，重合节点已显示为绿色。`);
+        };
+
+        // ================== Node Touchpad ==================
+        const tpWrap = document.getElementById('tpWrap');
+        const tpDock = document.getElementById('tpDock');
+        const tpArea = document.getElementById('tpArea');
+        const tpHint = document.getElementById('tpHint');
+        const tpDot = document.getElementById('tpDot');
+        const tpInfo = document.getElementById('tpInfo');
+        const tpHeader = document.getElementById('tpHeader');
+        const tpResize = document.getElementById('tpResize');
+        const btnTpToggle = document.getElementById('btnTouchpadToggle');
+        const btnTpFloat = document.getElementById('btnTpFloat');
+        const tpFloatingNote = document.getElementById('tpFloatingNote');
+        let tpOpen = false;
+        let tpFloating = false;
+        let tpSensitivity = 1.0;
+        let tpFloatRect = null; // remembered {left, top, width, height}
+
+        // Active touchpad stroke
+        let tpPointerId = null;
+        let tpLast = null;          // last pointer pos in pad
+        let tpRawPos = null;        // unrounded (unsnapped) world position of node
+        let tpUndoSaved = false;
+
+        function hasValidSelection() {
+            return selectedNodeIdx >= 0 && selectedNodeIdx < nodes.length &&
+                   selectedPtIdx >= 0 && nodes[selectedNodeIdx] &&
+                   selectedPtIdx < nodes[selectedNodeIdx].points.length;
+        }
+
+        function updateTouchpadInfo() {
+            if (!tpOpen) return;
+            const ok = hasValidSelection();
+            tpArea.classList.toggle('disabled', !ok);
+            if (ok) {
+                const p = nodes[selectedNodeIdx].points[selectedPtIdx];
+                tpInfo.innerText = `选中节点 #${selectedNodeIdx}(${nodes[selectedNodeIdx].type}) 点${selectedPtIdx} → X: ${Math.round(p.x)}  Y: ${Math.round(p.y)}` + (isPointOverlapped(selectedNodeIdx, selectedPtIdx) ? '  [已重合]' : '');
+                tpHint.style.display = tpDragging ? 'none' : 'flex';
+                tpHint.innerHTML = '在此区域滑动即可移动选中节点<br>（单指操作，多指将自动中止）';
+            } else {
+                tpInfo.innerText = '未选中节点';
+                tpHint.style.display = 'flex';
+                tpHint.innerHTML = '先在画布上选中一个节点（红色），<br>再在此区域滑动手指/笔尖来移动它';
+            }
+        }
+
+        function setTouchpadOpen(open) {
+            if (!open) endTouchpadStroke(true);
+            tpOpen = open;
+            tpWrap.classList.toggle('open', open);
+            btnTpToggle.innerText = open ? '▲ 收起' : '▼ 展开';
+            tpFloatingNote.style.display = (open && tpFloating) ? 'block' : 'none';
+            if (open && tpFloating) clampFloatingPad();
+            updateTouchpadInfo();
+        }
+
+        function setTouchpadFloating(floating) {
+            endTouchpadStroke(true);
+            tpFloating = floating;
+            if (floating) {
+                document.body.appendChild(tpWrap);
+                tpWrap.classList.add('floating');
+                if (!tpFloatRect) {
+                    const cr = container.getBoundingClientRect();
+                    const w = 300, h = 300;
+                    tpFloatRect = { left: cr.right - w - 16, top: cr.bottom - h - 16, width: w, height: h };
+                }
+                applyFloatRect();
+                btnTpFloat.innerText = '📥 停靠';
+            } else {
+                tpWrap.classList.remove('floating');
+                tpWrap.style.left = tpWrap.style.top = tpWrap.style.width = tpWrap.style.height = '';
+                tpDock.appendChild(tpWrap);
+                btnTpFloat.innerText = '📌 悬浮';
+            }
+            tpFloatingNote.style.display = (tpOpen && tpFloating) ? 'block' : 'none';
+            updateTouchpadInfo();
+        }
+
+        function applyFloatRect() {
+            tpWrap.style.left = tpFloatRect.left + 'px';
+            tpWrap.style.top = tpFloatRect.top + 'px';
+            tpWrap.style.width = tpFloatRect.width + 'px';
+            tpWrap.style.height = tpFloatRect.height + 'px';
+        }
+
+        function clampFloatingPad() {
+            if (!tpFloating || !tpFloatRect) return;
+            const vw = window.innerWidth, vh = window.innerHeight;
+            tpFloatRect.width = Math.max(200, Math.min(tpFloatRect.width, vw - 8));
+            tpFloatRect.height = Math.max(180, Math.min(tpFloatRect.height, vh - 8));
+            tpFloatRect.left = Math.max(0, Math.min(tpFloatRect.left, vw - tpFloatRect.width));
+            tpFloatRect.top = Math.max(0, Math.min(tpFloatRect.top, vh - tpFloatRect.height));
+            applyFloatRect();
+        }
+        window.addEventListener('resize', clampFloatingPad);
+
+        btnTpToggle.onclick = () => setTouchpadOpen(!tpOpen);
+        document.getElementById('btnTpClose').onclick = () => setTouchpadOpen(false);
+        btnTpFloat.onclick = () => setTouchpadFloating(!tpFloating);
+        document.getElementById('tpSensitivity').oninput = function(e) {
+            tpSensitivity = parseFloat(e.target.value) || 1;
+            document.getElementById('tpSensText').innerText = tpSensitivity.toFixed(1) + 'x';
+        };
+
+        // Recompute alignment guides for the actively moved node (same rules as canvas drag)
+        function computeGuidesFor(activePt) {
+            currentActiveGuides = [];
+            if (!showGuides || !activePt) return;
+            const tol = 2;
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = 0; j < nodes[i].points.length; j++) {
+                    if (i === selectedNodeIdx && j === selectedPtIdx) continue;
+                    const o = nodes[i].points[j];
+                    if (Math.abs(activePt.x - o.x) <= tol && !currentActiveGuides.some(g => g.type === 'v' && g.pos === o.x)) {
+                        currentActiveGuides.push({ type: 'v', pos: o.x });
+                    }
+                    if (Math.abs(activePt.y - o.y) <= tol && !currentActiveGuides.some(g => g.type === 'h' && g.pos === o.y)) {
+                        currentActiveGuides.push({ type: 'h', pos: o.y });
+                    }
+                }
+            }
+        }
+
+        function endTouchpadStroke(silent) {
+            if (tpPointerId !== null) {
+                try { tpArea.releasePointerCapture(tpPointerId); } catch (err) {}
+            }
+            const wasDragging = tpDragging;
+            tpPointerId = null;
+            tpLast = null;
+            tpRawPos = null;
+            tpUndoSaved = false;
+            tpDragging = false;
+            tpArea.classList.remove('active');
+            tpDot.style.display = 'none';
+            if (wasDragging || !silent) {
+                snappedNodePos = null;
+                currentActiveGuides = [];
+                render();
+            }
+        }
+
+        tpArea.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // A second finger while a stroke is active = possible pinch: abort stroke, never zoom
+            if (tpPointerId !== null && e.pointerId !== tpPointerId) {
+                endTouchpadStroke(false);
+                return;
+            }
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (!hasValidSelection()) { updateTouchpadInfo(); return; }
+            if (isDragging) return; // canvas drag already in progress
+
+            tpPointerId = e.pointerId;
+            try { tpArea.setPointerCapture(e.pointerId); } catch (err) {}
+            tpLast = { x: e.clientX, y: e.clientY };
+            const p = nodes[selectedNodeIdx].points[selectedPtIdx];
+            tpRawPos = { x: p.x, y: p.y };
+            tpUndoSaved = false;
+            tpDragging = true;
+            tpArea.classList.add('active');
+            const r = tpArea.getBoundingClientRect();
+            tpDot.style.left = (e.clientX - r.left) + 'px';
+            tpDot.style.top = (e.clientY - r.top) + 'px';
+            tpDot.style.display = 'block';
+            render();
+        });
+
+        tpArea.addEventListener('pointermove', (e) => {
+            if (tpPointerId === null || e.pointerId !== tpPointerId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (!hasValidSelection()) { endTouchpadStroke(false); return; }
+
+            const r = tpArea.getBoundingClientRect();
+            tpDot.style.left = Math.max(0, Math.min(r.width, e.clientX - r.left)) + 'px';
+            tpDot.style.top = Math.max(0, Math.min(r.height, e.clientY - r.top)) + 'px';
+
+            const dx = e.clientX - tpLast.x;
+            const dy = e.clientY - tpLast.y;
+            tpLast = { x: e.clientX, y: e.clientY };
+            if (dx === 0 && dy === 0) return;
+
+            // Pad pixels -> screen pixels (sensitivity) -> world units (current zoom)
+            tpRawPos.x += dx * tpSensitivity / scale;
+            tpRawPos.y += dy * tpSensitivity / scale;
+
+            let finalPt = { x: Math.round(tpRawPos.x), y: Math.round(tpRawPos.y) };
+            snappedNodePos = null;
+
+            if (enableMagneticSnap) {
+                const rawScr = worldToScreen(tpRawPos.x, tpRawPos.y);
+                outer:
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = 0; j < nodes[i].points.length; j++) {
+                        if (i === selectedNodeIdx && j === selectedPtIdx) continue;
+                        const t = nodes[i].points[j];
+                        const ts = worldToScreen(t.x, t.y);
+                        if (Math.hypot(ts.x - rawScr.x, ts.y - rawScr.y) < 14) {
+                            finalPt = { x: t.x, y: t.y };
+                            snappedNodePos = { x: t.x, y: t.y };
+                            break outer;
+                        }
+                    }
+                }
+            }
+
+            const cur = nodes[selectedNodeIdx].points[selectedPtIdx];
+            if (cur.x !== finalPt.x || cur.y !== finalPt.y) {
+                if (!tpUndoSaved) { saveUndoState(); tpUndoSaved = true; }
+                nodes[selectedNodeIdx].points[selectedPtIdx] = finalPt;
+                updateCodeFromNodes(false);
+            }
+            computeGuidesFor(nodes[selectedNodeIdx].points[selectedPtIdx]);
+            render();
+        });
+
+        const tpEnd = (e) => {
+            if (tpPointerId === null || e.pointerId !== tpPointerId) return;
+            e.stopPropagation();
+            endTouchpadStroke(false);
+        };
+        tpArea.addEventListener('pointerup', tpEnd);
+        tpArea.addEventListener('pointercancel', tpEnd);
+        tpArea.addEventListener('lostpointercapture', tpEnd);
+
+        // Block browser gestures (pinch zoom / double-tap zoom / scroll / long-press menu) inside the pad only
+        ['touchstart', 'touchmove', 'touchend'].forEach(evt => {
+            tpArea.addEventListener(evt, (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+        });
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+            tpArea.addEventListener(evt, (e) => e.preventDefault());
+        });
+        tpArea.addEventListener('contextmenu', (e) => e.preventDefault());
+        tpArea.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+
+        // Floating window drag (title bar) & resize (bottom-right handle)
+        function bindFloatDrag(handle, mode) {
+            let pid = null, start = null, startRect = null;
+            handle.addEventListener('pointerdown', (e) => {
+                if (!tpFloating) return;
+                if (mode === 'move' && e.target.closest('button')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                pid = e.pointerId;
+                try { handle.setPointerCapture(pid); } catch (err) {}
+                start = { x: e.clientX, y: e.clientY };
+                startRect = Object.assign({}, tpFloatRect);
+            });
+            handle.addEventListener('pointermove', (e) => {
+                if (pid === null || e.pointerId !== pid) return;
+                e.preventDefault();
+                const dx = e.clientX - start.x, dy = e.clientY - start.y;
+                if (mode === 'move') {
+                    tpFloatRect.left = startRect.left + dx;
+                    tpFloatRect.top = startRect.top + dy;
+                } else {
+                    tpFloatRect.width = startRect.width + dx;
+                    tpFloatRect.height = startRect.height + dy;
+                }
+                clampFloatingPad();
+            });
+            const stop = (e) => { if (e.pointerId === pid) pid = null; };
+            handle.addEventListener('pointerup', stop);
+            handle.addEventListener('pointercancel', stop);
+            ['touchstart', 'touchmove'].forEach(evt => {
+                handle.addEventListener(evt, (e) => {
+                    if (tpFloating && e.cancelable && !e.target.closest('button')) e.preventDefault();
+                }, { passive: false });
+            });
+        }
+        bindFloatDrag(tpHeader, 'move');
+        bindFloatDrag(tpResize, 'resize');
+
+        // Keyboard Shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                undo();
+            } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                redo();
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                deleteSelectedNode();
+            }
+        });
+
+        // Canvas Zoom Buttons
+        document.getElementById('btnZoomIn').onclick = function() {
+            scale *= 1.25;
+            render();
+            updateInfoTag();
+        };
+
+        document.getElementById('btnZoomOut').onclick = function() {
+            scale *= 0.8;
+            render();
+            updateInfoTag();
+        };
+
+        document.getElementById('btnZoom100').onclick = function() {
+            scale = 1.0;
+            render();
+            updateInfoTag();
+        };
+
+        // Code Area Event Bindings
+        document.getElementById('btnApplyCode').onclick = function() {
+            parseAssCode(document.getElementById('assCodeInput').value);
+        };
+
+        document.getElementById('btnCopyCode').onclick = function() {
+            navigator.clipboard.writeText(document.getElementById('assCodeInput').value);
+            alert('ASS 矢量代码已复制到剪贴板！');
+        };
+
+        // Style Settings
+        document.getElementById('fillColor').oninput = function(e) {
+            fillColor = e.target.value;
+            document.getElementById('expFillColor').value = fillColor;
+            render();
+        };
+        document.getElementById('fillOpacity').oninput = function(e) { fillOpacity = parseFloat(e.target.value); render(); };
+        document.getElementById('strokeColor').oninput = function(e) { strokeColor = e.target.value; render(); };
+        document.getElementById('strokeWidth').oninput = function(e) { strokeWidth = parseInt(e.target.value); render(); };
+        document.getElementById('chkShowGuides').onchange = function(e) { showGuides = e.target.checked; render(); };
+        document.getElementById('guideColor').oninput = function(e) { guideColor = e.target.value; render(); };
+        document.getElementById('chkShowBBox').onchange = function(e) { showBBox = e.target.checked; render(); };
+        document.getElementById('chkShowGrid').onchange = function(e) { showGrid = e.target.checked; render(); };
+        document.getElementById('gridColor').oninput = function(e) { gridColor = e.target.value; render(); };
+        document.getElementById('chkShowAxes').onchange = function(e) { showAxes = e.target.checked; render(); };
+        document.getElementById('axesColor').oninput = function(e) { axesColor = e.target.value; render(); };
+        document.getElementById('chkMagneticSnap').onchange = function(e) { enableMagneticSnap = e.target.checked; };
+        document.getElementById('chkShowRulers').onchange = function(e) { showRulers = e.target.checked; render(); };
+        document.getElementById('chkClosePath').onchange = function(e) { isClosed = e.target.checked; updateCodeFromNodes(); render(); };
+
+        // Reset View & Clear Canvas
+        document.getElementById('btnResetView').onclick = function() {
+            scale = 1.0;
+            offsetX = viewW / 2;
+            offsetY = viewH / 2;
+            render();
+            updateInfoTag();
+        };
+
+        document.getElementById('btnClearCanvas').onclick = function() {
+            if (confirm('确定清空当前画布上所有节点吗？')) {
+                saveUndoState();
+                nodes = [];
+                persistentGuides = [];
+                currentActiveGuides = [];
+                updateCodeFromNodes(false);
+                render();
+            }
+        };
+
+        // Background Image Loader
+        document.getElementById('imgLoader').onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    bgImg = new Image();
+                    bgImg.onload = function() {
+                        bgImgScale = 1.0;
+                        document.getElementById('imgControls').style.display = 'flex';
+                        updateImgDimText();
+                        render();
+                        updateInfoTag();
+                    };
+                    bgImg.src = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        function updateImgDimText() {
+            if (bgImg) {
+                let scaledW = Math.round(bgImg.width * bgImgScale);
+                let scaledH = Math.round(bgImg.height * bgImgScale);
+                document.getElementById('imgDimText').innerText = `原尺寸: ${bgImg.width}x${bgImg.height} px | 缩放后: ${scaledW}x${scaledH} px`;
+            }
+        }
+
+        document.getElementById('imgOpacity').oninput = function(e) {
+            bgImgOpacity = parseFloat(e.target.value);
+            render();
+        };
+
+        document.getElementById('btnImgZoomIn').onclick = function() {
+            bgImgScale *= 1.2;
+            updateImgDimText();
+            render();
+            updateInfoTag();
+        };
+
+        document.getElementById('btnImgZoomOut').onclick = function() {
+            bgImgScale *= 0.8;
+            updateImgDimText();
+            render();
+            updateInfoTag();
+        };
+
+        document.getElementById('btnImgReset').onclick = function() {
+            bgImgScale = 1.0;
+            updateImgDimText();
+            render();
+            updateInfoTag();
+        };
+
+        // Export PNG
+        document.getElementById('expWidth').oninput = updateExportHeightEstimate;
+
+        document.getElementById('btnExportPng').onclick = function() {
+            const bbox = getBoundingBox();
+            if (!bbox) {
+                alert('画布上没有有效的矢量路径选区可以导出！');
+                return;
+            }
+
+            const targetW = parseInt(document.getElementById('expWidth').value) || 1920;
+            const targetH = Math.round(targetW * (bbox.height / bbox.width));
+            const expColor = document.getElementById('expFillColor').value;
+
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = targetW;
+            offCanvas.height = targetH;
+            const offCtx = offCanvas.getContext('2d');
+
+            const scaleFactor = targetW / bbox.width;
+
+            offCtx.save();
+            offCtx.beginPath();
+
+            for (let i = 0; i < nodes.length; i++) {
+                let n = nodes[i];
+                if (n.type === 'm') {
+                    let x = (n.points[0].x - bbox.minX) * scaleFactor;
+                    let y = (n.points[0].y - bbox.minY) * scaleFactor;
+                    offCtx.moveTo(x, y);
+                } else if (n.type === 'l') {
+                    let x = (n.points[0].x - bbox.minX) * scaleFactor;
+                    let y = (n.points[0].y - bbox.minY) * scaleFactor;
+                    offCtx.lineTo(x, y);
+                } else if (n.type === 'b') {
+                    let x1 = (n.points[0].x - bbox.minX) * scaleFactor;
+                    let y1 = (n.points[0].y - bbox.minY) * scaleFactor;
+                    let x2 = (n.points[1].x - bbox.minX) * scaleFactor;
+                    let y2 = (n.points[1].y - bbox.minY) * scaleFactor;
+                    let x3 = (n.points[2].x - bbox.minX) * scaleFactor;
+                    let y3 = (n.points[2].y - bbox.minY) * scaleFactor;
+                    offCtx.bezierCurveTo(x1, y1, x2, y2, x3, y3);
+                }
+            }
+
+            if (isClosed) offCtx.closePath();
+
+            offCtx.fillStyle = expColor;
+            offCtx.fill('nonzero');
+            offCtx.restore();
+
+            const now = new Date();
+            const dateStr = now.getFullYear().toString() +
+                (now.getMonth() + 1).toString().padStart(2, '0') +
+                now.getDate().toString().padStart(2, '0') + '_' +
+                now.getHours().toString().padStart(2, '0') +
+                now.getMinutes().toString().padStart(2, '0') +
+                now.getSeconds().toString().padStart(2, '0');
+            const filename = `assdraw_${dateStr}.png`;
+
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = offCanvas.toDataURL('image/png');
+            link.click();
+        };
+
+        // Scale, Flip & Offset Tools
+        document.getElementById('btnScaleUp').onclick = function() { transformNodes(1.2, 1.2); };
+        document.getElementById('btnScaleDown').onclick = function() { transformNodes(0.8, 0.8); };
+        document.getElementById('btnFlipH').onclick = function() { transformNodes(-1, 1); };
+        document.getElementById('btnFlipV').onclick = function() { transformNodes(1, -1); };
+
+        // Vector Position Shift Direction Buttons
+        document.getElementById('btnShiftLeft').onclick = function() {
+            let step = parseInt(document.getElementById('shiftStep').value) || 10;
+            shiftNodes(-step, 0);
+        };
+        document.getElementById('btnShiftRight').onclick = function() {
+            let step = parseInt(document.getElementById('shiftStep').value) || 10;
+            shiftNodes(step, 0);
+        };
+        document.getElementById('btnShiftUp').onclick = function() {
+            let step = parseInt(document.getElementById('shiftStep').value) || 10;
+            shiftNodes(0, -step);
+        };
+        document.getElementById('btnShiftDown').onclick = function() {
+            let step = parseInt(document.getElementById('shiftStep').value) || 10;
+            shiftNodes(0, step);
+        };
+
+        function shiftNodes(dx, dy) {
+            saveUndoState();
+            for (let n of nodes) {
+                for (let p of n.points) {
+                    p.x += dx;
+                    p.y += dy;
+                }
+            }
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        function transformNodes(sx, sy) {
+            saveUndoState();
+            for (let n of nodes) {
+                for (let p of n.points) {
+                    p.x = Math.round(p.x * sx);
+                    p.y = Math.round(p.y * sy);
+                }
+            }
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        // Initialize Canvas and Demo
+        resizeCanvas();
+        initDemoPath();
+    </script>
+</body>
+</html>
