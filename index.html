@@ -28,6 +28,9 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             height: 100vh;
+            /* 安卓 Chrome：100vh 按地址栏收起时的最大高度计算，底部会被遮住；
+               dvh 随地址栏实际显示/收起变化，保证底部坐标栏可见 */
+            height: 100dvh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -136,6 +139,8 @@
             position: relative;
             overflow: hidden;
             height: calc(100vh - 46px);
+            height: calc(100dvh - 46px);
+            min-height: 0;
         }
 
         /* Canvas Container */
@@ -633,6 +638,18 @@
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvasContainer');
 
+        // === 可视高度兜底 ===
+        // 不支持 100dvh 的旧浏览器：按实际可视高度设置 body 高度，避免底部坐标栏被浏览器地址栏遮住。
+        // 支持 dvh 的浏览器直接走 CSS，不执行这里。
+        (function () {
+            if (window.CSS && CSS.supports && CSS.supports('height', '100dvh')) return;
+            function fitBodyHeight() {
+                document.body.style.height = window.innerHeight + 'px';
+            }
+            window.addEventListener('resize', fitBodyHeight);
+            fitBodyHeight();
+        })();
+
         let nodes = []; // List of PathNode
         let isClosed = true;
 
@@ -640,11 +657,30 @@
         let undoStack = [];
         let redoStack = [];
 
-        function saveUndoState() {
-            const state = {
+        // 拖动前暂存的快照：只有在第一次真正发生位移时才写入撤销栈，
+        // 避免“只点一下节点/轮廓不拖动”也产生空撤销记录并清空重做栈。
+        let pendingUndoSnapshot = null;
+
+        function captureUndoSnapshot() {
+            return {
                 nodes: nodes.map(n => n.clone()),
                 isClosed: isClosed
             };
+        }
+
+        function commitPendingUndo() {
+            if (!pendingUndoSnapshot) return;
+            undoStack.push(pendingUndoSnapshot);
+            if (undoStack.length > 50) undoStack.shift();
+            redoStack = [];
+            pendingUndoSnapshot = null;
+            updateUndoRedoUI();
+        }
+
+        function saveUndoState() {
+            // 其它操作写入撤销记录时，作废尚未提交的拖动快照，防止之后提交过期快照
+            pendingUndoSnapshot = null;
+            const state = captureUndoSnapshot();
             undoStack.push(state);
             if (undoStack.length > 50) undoStack.shift();
             redoStack = [];
@@ -948,6 +984,11 @@
         function parseAssCode(codeStr) {
             saveUndoState();
             nodes = [];
+            // 节点数组已整体替换，旧的选中序号全部失效，必须重置
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            selectedContourIdx = -1;
+            snappedNodePos = null;
             const tokens = codeStr.trim().split(/\s+/);
             let i = 0;
             let currentType = 'm';
@@ -1414,7 +1455,8 @@
                 }
 
                 if (selectedNodeIdx !== -1) {
-                    saveUndoState();
+                    // 只暂存快照，真正移动后才写入撤销栈
+                    pendingUndoSnapshot = captureUndoSnapshot();
                     isDragging = true;
                 }
             } else if (currentMode === 'move_contour') {
@@ -1438,7 +1480,8 @@
                 }
 
                 if (selectedContourIdx !== -1) {
-                    saveUndoState();
+                    // 只暂存快照，真正移动后才写入撤销栈
+                    pendingUndoSnapshot = captureUndoSnapshot();
                     isDragging = true;
                 }
                 render();
@@ -1511,14 +1554,21 @@
                         }
                     }
 
-                    nodes[selectedNodeIdx].points[selectedPtIdx] = finalWorldPt;
-                    updateCodeFromNodes(false);
+                    const curPt = nodes[selectedNodeIdx].points[selectedPtIdx];
+                    if (curPt.x !== finalWorldPt.x || curPt.y !== finalWorldPt.y) {
+                        // 第一次真正发生位移，才把按下时的快照写入撤销栈
+                        commitPendingUndo();
+                        nodes[selectedNodeIdx].points[selectedPtIdx] = finalWorldPt;
+                        updateCodeFromNodes(false);
+                    }
                 } else if (currentMode === 'move_contour' && selectedContourIdx !== -1) {
                     const contours = getContours();
                     if (selectedContourIdx < contours.length) {
                         let dxWorld = Math.round(dxScreen / scale);
                         let dyWorld = Math.round(dyScreen / scale);
                         if (dxWorld !== 0 || dyWorld !== 0) {
+                            // 第一次真正发生位移，才把按下时的快照写入撤销栈
+                            commitPendingUndo();
                             let nodeIndices = contours[selectedContourIdx];
                             for (let iIdx of nodeIndices) {
                                 for (let p of nodes[iIdx].points) {
@@ -1569,6 +1619,8 @@
 
         function onPointerUp() {
             isDragging = false;
+            // 松开时若从未移动，暂存快照直接丢弃，不产生空撤销记录
+            pendingUndoSnapshot = null;
             snappedNodePos = null;
             currentActiveGuides = [];
             // Re-render so an overlapped node released without further dragging
@@ -2001,7 +2053,13 @@
         document.getElementById('axesColor').oninput = function(e) { axesColor = e.target.value; render(); };
         document.getElementById('chkMagneticSnap').onchange = function(e) { enableMagneticSnap = e.target.checked; };
         document.getElementById('chkShowRulers').onchange = function(e) { showRulers = e.target.checked; render(); };
-        document.getElementById('chkClosePath').onchange = function(e) { isClosed = e.target.checked; updateCodeFromNodes(); render(); };
+        // 先保存“切换前”的快照，再修改闭合状态，撤销才能恢复到切换之前
+        document.getElementById('chkClosePath').onchange = function(e) {
+            saveUndoState();
+            isClosed = e.target.checked;
+            updateCodeFromNodes(false);
+            render();
+        };
 
         // Reset View & Clear Canvas
         document.getElementById('btnResetView').onclick = function() {
@@ -2016,6 +2074,11 @@
             if (confirm('确定清空当前画布上所有节点吗？')) {
                 saveUndoState();
                 nodes = [];
+                // 节点已全部清空，旧的选中序号全部失效，必须重置
+                selectedNodeIdx = -1;
+                selectedPtIdx = -1;
+                selectedContourIdx = -1;
+                snappedNodePos = null;
                 persistentGuides = [];
                 currentActiveGuides = [];
                 updateCodeFromNodes(false);
