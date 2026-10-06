@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Web-ASSDraw3 — ASS 矢量图形在线编辑器</title>
+    <!-- Keep the existing UI styles; do not load Tailwind's Preflight reset. -->
+    <style type="text/tailwindcss">
+        @import "tailwindcss/theme.css" layer(theme);
+        @import "tailwindcss/utilities.css" layer(utilities);
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         :root {
             --bg-color: #383838;
@@ -14,6 +20,17 @@
             --accent-hover: #0077dd;
             --text-color: #f0f0f0;
             --btn-bg: #525252;
+
+            /* ===== 右边栏尺寸（可配置） =====
+               以前折叠位移写死成 -321px，和「320px 宽 + 1px 左边框」硬耦合，
+               改宽度就必须同步改那个魔数。现在宽度与边框都走变量，
+               折叠位移用 calc() 自动算出来，只改这两个值即可。 */
+            --side-panel-width: 320px;
+            --side-panel-border: 1px;
+
+            /* 折叠按钮默认淡出，指针靠近/悬停/按下时恢复，避免遮挡画布上的小图形 */
+            --panel-toggle-idle-opacity: 0.25;
+            --panel-toggle-active-opacity: 0.9;
         }
 
         * {
@@ -162,7 +179,7 @@
 
         /* Controls / Side Panel */
         .side-panel {
-            width: 320px;
+            width: var(--side-panel-width);
             background-color: var(--panel-bg);
             display: flex;
             flex-direction: column;
@@ -173,7 +190,7 @@
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
-            border-left: 1px solid var(--border-light);
+            border-left: var(--side-panel-border) solid var(--border-light);
             box-shadow: -2px 0 6px rgba(0,0,0,0.4);
             height: 100%;
             max-height: 100%;
@@ -253,6 +270,11 @@
             cursor: pointer;
             width: 32px;
             height: 24px;
+        }
+
+        input[type="color"]:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
         }
 
         /* Floating Info Tag */
@@ -379,7 +401,8 @@
             transition: margin-right 0.25s ease;
         }
         .side-panel.collapsed {
-            margin-right: -321px;   /* 320px 宽度 + 1px 左边框，整体滑出右边缘 */
+            /* 面板宽度 + 左边框，整体滑出右边缘；数值由上面的变量算出，不再写死 */
+            margin-right: calc((var(--side-panel-width) + var(--side-panel-border)) * -1);
             box-shadow: none;
             visibility: hidden;
             transition: margin-right 0.25s ease, visibility 0s linear 0.25s;
@@ -409,10 +432,14 @@
             box-shadow: -2px 2px 5px rgba(0,0,0,0.5);
             text-shadow: 0 1px 2px rgba(0,0,0,0.8);
             touch-action: manipulation;
-            opacity: 0.85;
+            /* 默认淡出，少遮挡画布；靠近 / 悬停 / 按下时恢复 */
+            opacity: var(--panel-toggle-idle-opacity);
+            transition: opacity 0.2s ease, background 0.15s ease;
         }
+        .panel-toggle.nearby,
+        .panel-toggle:focus-visible { opacity: var(--panel-toggle-active-opacity); }
         .panel-toggle:hover { opacity: 1; background: linear-gradient(to right, #727272, #4d4d4d); }
-        .panel-toggle:active { background: linear-gradient(to right, #303030, #454545); }
+        .panel-toggle:active { opacity: 1; background: linear-gradient(to right, #303030, #454545); }
     </style>
 </head>
 <body>
@@ -579,9 +606,19 @@
                     <input type="text" id="expHeight" value="自动计算" readonly style="background: #1e1e1e; color: #888;">
                 </div>
                 <div class="row">
-                    <label>填充颜色:</label>
+                    <label>图形颜色:</label>
                     <input type="color" id="expFillColor" value="#0088ff">
-                    <span style="font-size: 11px; color: #aaa;">(透明背景)</span>
+                    <span style="font-size: 11px; color: #aaa;">填充色</span>
+                </div>
+                <div class="row">
+                    <label>背景颜色:</label>
+                    <label style="min-width: auto; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="expBgTransparent" checked style="width: auto;"> 透明</label>
+                    <input type="color" id="expBgColor" value="#ffffff" disabled title="取消勾选“透明”后此背景色生效">
+                </div>
+                <div class="row">
+                    <label>四周留白:</label>
+                    <input type="number" id="expPadding" value="0" min="0" max="100" step="1" style="width: 72px;">
+                    <span style="font-size: 11px; color: #aaa;">px（0–100）</span>
                 </div>
                 <div class="row">
                     <button class="btn" id="btnExportPng" style="width: 100%; justify-content: center; background: linear-gradient(to bottom, #00aa66, #007744);">💾 保存为 PNG 图片</button>
@@ -637,6 +674,68 @@
         const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvasContainer');
+
+        // === 轻量本地设置存取（界面状态记忆）===
+        // 只用于记住界面状态（右边栏是否折叠、触控板展开/悬浮/位置/灵敏度），
+        // 不涉及任何矢量数据。双击打开本地 HTML（file://）时，部分浏览器
+        // （尤其安卓 Chrome）会禁用 localStorage，读写甚至直接抛异常，
+        // 因此全部操作都包在 try/catch 里：不可用时静默退回默认值，
+        // 既有功能完全不受影响（此时表现与改动前一致：每次打开都是默认状态）。
+        const PREF_PREFIX = 'webassdraw3.';
+        const Prefs = {
+            available: (function () {
+                try {
+                    const probe = PREF_PREFIX + '__probe';
+                    window.localStorage.setItem(probe, '1');
+                    window.localStorage.removeItem(probe);
+                    return true;
+                } catch (err) {
+                    return false;
+                }
+            })(),
+            get(key, fallback) {
+                if (!this.available) return fallback;
+                try {
+                    const v = window.localStorage.getItem(PREF_PREFIX + key);
+                    return (v === null || v === undefined) ? fallback : v;
+                } catch (err) {
+                    return fallback;
+                }
+            },
+            set(key, value) {
+                if (!this.available) return;
+                try {
+                    window.localStorage.setItem(PREF_PREFIX + key, String(value));
+                } catch (err) {
+                    // 配额不足 / 隐私模式 / file:// 受限：忽略，不影响使用
+                }
+            },
+            getBool(key, fallback) {
+                const v = this.get(key, null);
+                if (v === null) return fallback;
+                return v === '1';
+            },
+            setBool(key, value) {
+                this.set(key, value ? '1' : '0');
+            },
+            getJSON(key, fallback) {
+                const v = this.get(key, null);
+                if (v === null) return fallback;
+                try {
+                    const obj = JSON.parse(v);
+                    return (obj && typeof obj === 'object') ? obj : fallback;
+                } catch (err) {
+                    return fallback;
+                }
+            },
+            setJSON(key, obj) {
+                try {
+                    this.set(key, JSON.stringify(obj));
+                } catch (err) {
+                    // 忽略序列化失败
+                }
+            }
+        };
 
         // === 可视高度兜底 ===
         // 不支持 100dvh 的旧浏览器：按实际可视高度设置 body 高度，避免底部坐标栏被浏览器地址栏遮住。
@@ -744,6 +843,12 @@
         let lastDragMousePt = { x: 0, y: 0 };
         let snappedNodePos = null;
 
+        // 拖动轮廓时尚未凑满 1 个世界单位的“未取整位移”累加器。
+        // 以前每次移动都 Math.round(屏幕位移 / scale)，缩放 300% 时屏幕上动 1px 只对应 0.33 个世界单位，
+        // 取整后变成 0，同时 lastDragMousePt 已更新，这点位移就永远丢了。
+        // 现在把小数部分留在这里，累计到 ≥ 0.5 再应用，慢速拖动也能连续生效。
+        let contourDragRemainder = { x: 0, y: 0 };
+
         // Touchpad drag state (separate from canvas isDragging)
         let tpDragging = false;
 
@@ -803,10 +908,15 @@
         // === Side Panel Collapse Toggle (右边栏折叠开关) ===
         // 折叠/展开只改变画布容器宽度，不触发 window resize，
         // 因此用 ResizeObserver 监听容器尺寸变化，复用原有 resizeCanvas()（含高分屏适配）。
+        //
+        // 本批新增：
+        //  1) 折叠状态写入本地设置，刷新后保持（localStorage 不可用时自动退回“每次都展开”）。
+        //  2) 按钮默认淡出（CSS 变量 --panel-toggle-idle-opacity），
+        //     指针靠近 / 悬停 / 按下时才恢复，减少对画布小图形的遮挡。
         (function () {
             const sidePanel = document.getElementById('sidePanel');
             const btnToggle = document.getElementById('btnTogglePanel');
-            let panelCollapsed = false;
+            let panelCollapsed = Prefs.getBool('panel.collapsed', false);
 
             function applyPanelState() {
                 sidePanel.classList.toggle('collapsed', panelCollapsed);
@@ -814,11 +924,60 @@
                 btnToggle.title = panelCollapsed ? '展开右边栏' : '折叠右边栏（画布区更宽敞）';
             }
 
+            // ===== 按钮淡出 / 靠近高亮 =====
+            const NEAR_DISTANCE = 90;   // 指针与按钮的距离阈值（CSS px）
+            const TOUCH_HOLD_MS = 2000; // 触屏没有 hover，靠近后临时高亮一段时间
+            let fadeTimer = 0;
+
+            function showToggle(temporary) {
+                btnToggle.classList.add('nearby');
+                if (fadeTimer) {
+                    clearTimeout(fadeTimer);
+                    fadeTimer = 0;
+                }
+                if (temporary) {
+                    fadeTimer = setTimeout(() => {
+                        fadeTimer = 0;
+                        btnToggle.classList.remove('nearby');
+                    }, TOUCH_HOLD_MS);
+                }
+            }
+
+            function hideToggle() {
+                if (fadeTimer) {
+                    clearTimeout(fadeTimer);
+                    fadeTimer = 0;
+                }
+                btnToggle.classList.remove('nearby');
+            }
+
+            function isNear(e) {
+                const r = btnToggle.getBoundingClientRect();
+                const dx = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+                const dy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+                return Math.hypot(dx, dy) <= NEAR_DISTANCE;
+            }
+
+            // 只读监听：passive、不改画布状态、不阻止默认行为，不影响既有绘图手势
+            container.addEventListener('pointermove', (e) => {
+                if (isNear(e)) showToggle(e.pointerType === 'touch');
+                else if (e.pointerType !== 'touch') hideToggle();
+            }, { passive: true });
+
+            container.addEventListener('pointerdown', (e) => {
+                if (isNear(e)) showToggle(true);
+            }, { passive: true });
+
+            btnToggle.addEventListener('pointerenter', () => showToggle(false));
+            btnToggle.addEventListener('pointerleave', () => showToggle(true));
+
             btnToggle.addEventListener('pointerdown', (e) => e.stopPropagation());
             btnToggle.addEventListener('click', (e) => {
                 e.stopPropagation();
                 panelCollapsed = !panelCollapsed;
                 applyPanelState();
+                Prefs.setBool('panel.collapsed', panelCollapsed);
+                showToggle(true); // 切换后先亮一会儿，让人看清箭头方向
             });
 
             if (typeof ResizeObserver !== 'undefined') {
@@ -967,6 +1126,8 @@
         // Generate ASS Code Text from Nodes array
         function updateCodeFromNodes(addHistory = true) {
             if (addHistory) saveUndoState();
+            // 节点坐标已变化，重合查找表失效（下次查询时按新坐标重建）
+            overlapTable = null;
             let code = "";
             for (let n of nodes) {
                 code += n.type + " ";
@@ -981,6 +1142,18 @@
         }
 
         // Parse ASS Code Text into Nodes array
+        //
+        // 解析规则对照 libass（ass_drawing.c）：
+        //  - m：每对坐标都是一个新的轮廓起点；l：每对坐标一条直线；b：每 3 对坐标一条三次贝塞尔。
+        //  - s：均匀三次 B 样条。控制点序列 = [笔位置, s 后的各点…]，每连续 4 个控制点转换成一段贝塞尔：
+        //        b0 = (p0 + 4·p1 + p2) / 6      b1 = (2·p1 + p2) / 3
+        //        b2 = (p1 + 2·p2) / 3           b3 = (p1 + 4·p2 + p3) / 6
+        //    s 至少需要 3 对坐标；s 紧跟在 m 之后时，曲线从 b0 起笔（m 点只是控制点，不在曲线上），
+        //    所以 m 节点会被移到 b0；s 接在 l/b 之后时，曲线从当前笔位置起笔。
+        //  - p：在当前 B 样条后追加控制点，每个点多出一段贝塞尔。
+        //  - c：紧跟在 s/p 之后时是“闭合 B 样条”，再追加最初 3 个控制点；其它位置只表示“闭合”标记。
+        //  - n：不闭合的移动。图形进行中（m 之后已画出线段）时它既不闭合也不另起轮廓，对形状没有影响；
+        //        图形尚未开始时作用等同于 m。
         function parseAssCode(codeStr) {
             saveUndoState();
             nodes = [];
@@ -989,48 +1162,181 @@
             selectedPtIdx = -1;
             selectedContourIdx = -1;
             snappedNodePos = null;
-            const tokens = codeStr.trim().split(/\s+/);
-            let i = 0;
-            let currentType = 'm';
 
-            while (i < tokens.length) {
-                let token = tokens[i].toLowerCase();
-                if (['m', 'n', 'l', 'b', 's'].includes(token)) {
-                    currentType = token === 'n' ? 'm' : token;
-                    i++;
+            const tokens = codeStr.trim().split(/\s+/).filter(t => t !== '');
+            const COMMANDS = ['m', 'n', 'l', 'b', 's', 'p', 'c'];
+            const isNumToken = t => /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/i.test(t);
+
+            let cmd = 'm';             // 当前命令；缺省按 m（与旧版一致）
+            let sawClose = false;      // 代码中是否出现过 c
+            let droppedNumbers = 0;    // 因坐标不成组或命令无效而无法使用的坐标个数
+            let spline = null;         // 当前可延伸 / 可闭合的 B 样条上下文
+
+            const lastNode = () => (nodes.length ? nodes[nodes.length - 1] : null);
+            const penPoint = () => {
+                const n = lastNode();
+                return n ? n.points[n.points.length - 1] : null;
+            };
+            // 对应 libass 的 started：m 之后尚未画出任何线段/曲线时为 false
+            const isStarted = () => {
+                const n = lastNode();
+                return !!n && n.type !== 'm';
+            };
+
+            // 均匀三次 B 样条的一个窗口 (p0,p1,p2,p3) → 三次贝塞尔 (b0,b1,b2,b3)
+            const splineToBezier = (p0, p1, p2, p3) => ({
+                b0: { x: (p0.x + 4 * p1.x + p2.x) / 6, y: (p0.y + 4 * p1.y + p2.y) / 6 },
+                b1: { x: (2 * p1.x + p2.x) / 3,        y: (2 * p1.y + p2.y) / 3 },
+                b2: { x: (p1.x + 2 * p2.x) / 3,        y: (p1.y + 2 * p2.y) / 3 },
+                b3: { x: (p1.x + 4 * p2.x + p3.x) / 6, y: (p1.y + 4 * p2.y + p3.y) / 6 }
+            });
+
+            // 给当前 B 样条追加一个控制点，并按最近 4 个控制点生成一段贝塞尔
+            const extendSpline = (pt) => {
+                spline.ctrl.push({ x: pt.x, y: pt.y });
+                const c = spline.ctrl;
+                const k = c.length;
+                const seg = splineToBezier(c[k - 4], c[k - 3], c[k - 2], c[k - 1]);
+                if (!spline.hasSegments) {
+                    spline.hasSegments = true;
+                    const last = lastNode();
+                    if (last && last.type === 'm') {
+                        // s 紧跟在 m 之后：曲线从 b0 起笔，m 点只是控制点
+                        last.points = [{ x: seg.b0.x, y: seg.b0.y }];
+                    }
+                    // 否则（接在 l/b 之后）：曲线从当前笔位置起笔，b0 不使用
                 }
+                nodes.push(new PathNode('b', [seg.b1, seg.b2, seg.b3]));
+            };
 
-                if (i >= tokens.length) break;
+            // 开始一段新的 B 样条：pts 至少 3 个点，控制点序列 = [笔位置, ...pts]
+            const beginSpline = (pts) => {
+                const pen = penPoint();
+                spline = { ctrl: [{ x: pen.x, y: pen.y }], hasSegments: false };
+                spline.ctrl.push({ x: pts[0].x, y: pts[0].y });
+                spline.ctrl.push({ x: pts[1].x, y: pts[1].y });
+                for (let k = 2; k < pts.length; k++) extendSpline(pts[k]);
+            };
 
-                if (currentType === 'm' || currentType === 'l') {
-                    if (i + 1 < tokens.length && !isNaN(tokens[i]) && !isNaN(tokens[i+1])) {
-                        let x = parseFloat(tokens[i]);
-                        let y = parseFloat(tokens[i+1]);
-                        nodes.push(new PathNode(currentType, [{x, y}]));
-                        i += 2;
-                    } else { i++; }
-                } else if (currentType === 'b') {
-                    if (i + 5 < tokens.length && !isNaN(tokens[i])) {
-                        let pts = [];
-                        for (let k = 0; k < 6; k += 2) {
-                            pts.push({ x: parseFloat(tokens[i+k]), y: parseFloat(tokens[i+k+1]) });
-                        }
-                        nodes.push(new PathNode('b', pts));
-                        i += 6;
-                    } else { i++; }
-                } else if (token === 'c') {
-                    isClosed = true;
-                    i++;
+            // 闭合 B 样条：追加最初 3 个控制点（等价于 p 笔位置 s1 s2）
+            const closeSpline = () => {
+                if (!spline || !spline.hasSegments) return;
+                const first3 = spline.ctrl.slice(0, 3);
+                first3.forEach(p => extendSpline(p));
+            };
+
+            // 处理一串连续的坐标（按当前命令分组）
+            const processNumbers = (nums) => {
+                if (cmd === 'm' || cmd === 'n') {
+                    for (let k = 0; k + 1 < nums.length; k += 2) {
+                        // n 在图形进行中既不闭合也不另起轮廓，直接略过；图形尚未开始时等同于 m
+                        if (cmd === 'n' && isStarted()) continue;
+                        nodes.push(new PathNode('m', [{ x: nums[k], y: nums[k + 1] }]));
+                    }
+                    if (nums.length % 2 === 1) droppedNumbers++;
+                } else if (cmd === 'l') {
+                    for (let k = 0; k + 1 < nums.length; k += 2) {
+                        nodes.push(new PathNode('l', [{ x: nums[k], y: nums[k + 1] }]));
+                    }
+                    if (nums.length % 2 === 1) droppedNumbers++;
+                } else if (cmd === 'b') {
+                    const groups = Math.floor(nums.length / 6);
+                    for (let g = 0; g < groups; g++) {
+                        const base = g * 6;
+                        nodes.push(new PathNode('b', [
+                            { x: nums[base],     y: nums[base + 1] },
+                            { x: nums[base + 2], y: nums[base + 3] },
+                            { x: nums[base + 4], y: nums[base + 5] }
+                        ]));
+                    }
+                    droppedNumbers += nums.length - groups * 6;
+                } else if (cmd === 's') {
+                    const pairs = Math.floor(nums.length / 2);
+                    if (!penPoint() || pairs < 3) {
+                        // s 之前没有任何点，或点数不足 3 对：libass 同样忽略
+                        droppedNumbers += nums.length;
+                        spline = null;
+                    } else {
+                        const pts = [];
+                        for (let k = 0; k < pairs; k++) pts.push({ x: nums[k * 2], y: nums[k * 2 + 1] });
+                        beginSpline(pts);
+                        if (nums.length % 2 === 1) droppedNumbers++;
+                    }
+                    // s 后面没有命令字母的坐标，继续当作 p（延伸）处理
+                    cmd = 'p';
+                } else if (cmd === 'p') {
+                    if (!spline) {
+                        // p 必须跟在 s 之后
+                        droppedNumbers += nums.length;
+                    } else {
+                        const pairs = Math.floor(nums.length / 2);
+                        for (let k = 0; k < pairs; k++) extendSpline({ x: nums[k * 2], y: nums[k * 2 + 1] });
+                        if (nums.length % 2 === 1) droppedNumbers++;
+                    }
                 } else {
-                    i++;
+                    // c 之后等没有命令可归属的坐标
+                    droppedNumbers += nums.length;
                 }
+            };
+
+            let i = 0;
+            while (i < tokens.length) {
+                const tok = tokens[i];
+                const lower = tok.toLowerCase();
+
+                if (COMMANDS.includes(lower)) {
+                    i++;
+                    if (lower === 'c') {
+                        sawClose = true;
+                        // 紧跟在 s/p 之后才是闭合 B 样条；其它位置只是闭合标记
+                        if (spline) closeSpline();
+                        spline = null;
+                        cmd = null;
+                    } else {
+                        cmd = lower;
+                        // p 沿用当前 B 样条；其它命令都会结束它
+                        if (lower !== 'p') spline = null;
+                    }
+                    continue;
+                }
+
+                if (isNumToken(tok)) {
+                    const nums = [];
+                    let j = i;
+                    while (j < tokens.length && isNumToken(tokens[j])) {
+                        nums.push(parseFloat(tokens[j]));
+                        j++;
+                    }
+                    i = j;
+                    processNumbers(nums);
+                    continue;
+                }
+
+                // 其它无法识别的片段（例如 {\p1} 之类的标签）：与旧版一致，直接跳过，当前命令不变
+                i++;
             }
+
+            // 闭合状态以代码为准：出现过 c 即闭合，否则不闭合，并同步勾选框
+            // （解析出的节点为空时保持原状态，避免清空代码后勾选框被意外取消）
+            if (nodes.length > 0) {
+                isClosed = sawClose;
+                document.getElementById('chkClosePath').checked = isClosed;
+            }
+
             updateExportHeightEstimate();
             render();
             updateInfoTag();
+
+            if (droppedNumbers > 0) {
+                // 稍后再弹窗，让画布先把结果画出来
+                setTimeout(() => {
+                    alert('解析完成，但有 ' + droppedNumbers + ' 个坐标未能使用，已被忽略。\n' +
+                          '常见原因：m/n/l 的坐标需成对，b 需 6 个一组，s 需至少 3 组点，p 必须跟在 s 之后。');
+                }, 50);
+            }
         }
 
-        // Calculate Vector Path Bounding Box
+        // Calculate Vector Path Bounding Box (按控制点，供画布上的包围盒显示使用)
         function getBoundingBox(targetNodeIndices = null) {
             if (nodes.length === 0) return null;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1049,15 +1355,135 @@
             return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
         }
 
+        // ===== 导出专用：矢量路径的「真实」边界（含贝塞尔曲线极值）=====
+        // 为什么需要它：三阶贝塞尔曲线只经过首尾两个端点，中间两个控制点通常落在曲线之外。
+        // 如果像 getBoundingBox() 那样直接对所有控制点取 min/max，得到的框会比曲线实际
+        // 覆盖范围大一圈，导出的 PNG 就会在图形四周出现大片空白（只有恰好位于曲线上的
+        // 那条边会贴合）。这里对每段曲线按 x、y 两轴分别求一阶导数的零点，代回曲线方程，
+        // 得到曲线真正到达的极值，从而保证“不留白”时四条边严丝合缝。
+        function getExportBounds() {
+            if (nodes.length === 0) return null;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const addX = v => { if (v < minX) minX = v; if (v > maxX) maxX = v; };
+            const addY = v => { if (v < minY) minY = v; if (v > maxY) maxY = v; };
+
+            // 单轴三阶贝塞尔求值
+            const bezierAt = (a0, a1, a2, a3, t) => {
+                const mt = 1 - t;
+                return mt * mt * mt * a0 + 3 * mt * mt * t * a1 + 3 * mt * t * t * a2 + t * t * t * a3;
+            };
+
+            // 单轴三阶贝塞尔的极值（含两个端点）
+            // 导数/3 = A·t² + B·t + C
+            const addAxisExtrema = (a0, a1, a2, a3, add) => {
+                add(a0);
+                add(a3);
+                const A = -a0 + 3 * a1 - 3 * a2 + a3;
+                const B = 2 * (a0 - 2 * a1 + a2);
+                const C = a1 - a0;
+                const roots = [];
+                if (Math.abs(A) < 1e-9) {
+                    if (Math.abs(B) > 1e-9) roots.push(-C / B);
+                } else {
+                    const disc = B * B - 4 * A * C;
+                    if (disc >= 0) {
+                        const s = Math.sqrt(disc);
+                        roots.push((-B + s) / (2 * A), (-B - s) / (2 * A));
+                    }
+                }
+                for (const t of roots) {
+                    if (t > 0 && t < 1) add(bezierAt(a0, a1, a2, a3, t));
+                }
+            };
+
+            let cur = null; // 当前画笔位置
+            for (const n of nodes) {
+                if (!n.points || n.points.length === 0) continue;
+                if (n.type === 'm' || n.type === 'l') {
+                    const p = n.points[0];
+                    addX(p.x); addY(p.y);
+                    cur = p;
+                } else if (n.type === 'b') {
+                    const p0 = cur || n.points[0];
+                    const c1 = n.points[0], c2 = n.points[1], p3 = n.points[2];
+                    addAxisExtrema(p0.x, c1.x, c2.x, p3.x, addX);
+                    addAxisExtrema(p0.y, c1.y, c2.y, p3.y, addY);
+                    cur = p3;
+                }
+            }
+
+            if (minX === Infinity || minY === Infinity) return null;
+            return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+        }
+
+        // 读取导出留白（0–100 px，超出范围自动收敛）
+        function getExportPadding() {
+            const el = document.getElementById('expPadding');
+            if (!el) return 0;
+            let v = parseInt(el.value, 10);
+            if (isNaN(v) || v < 0) v = 0;
+            if (v > 100) v = 100;
+            return v;
+        }
+
+        // ===== 导出尺寸上限保护 =====
+        // 浏览器对 <canvas> 有硬性上限：Chrome/Edge/Firefox 单边最大 32767 px，
+        // 但总面积最多 268,435,456 px（= 16384 × 16384）。超过后 canvas 不会报错，
+        // 只是什么都画不出来，toDataURL() 返回 "data:,"，于是下载到的就是一张空白图。
+        // 又细又长的图形按 1920 宽导出时高度可能上万像素，很容易撞到这个上限。
+        // 这里按“单边 ≤ 16384 且 面积 ≤ 2^28”做保守检查，并反推出当前比例下允许的最大宽度。
+        const EXPORT_MAX_SIDE = 16384;
+        const EXPORT_MAX_AREA = 268435456;
+
+        // 由导出宽度、留白、图形宽高比计算成品尺寸（与 updateExportHeightEstimate / 导出逻辑一致）
+        function computeExportSize(expW, pad, bbox) {
+            const innerW = Math.max(1, expW - pad * 2);
+            const innerH = Math.max(1, Math.round(bbox.height * (innerW / bbox.width)));
+            return { w: expW, h: innerH + pad * 2, innerW: innerW, innerH: innerH };
+        }
+
+        function isExportSizeAllowed(w, h) {
+            return w <= EXPORT_MAX_SIDE && h <= EXPORT_MAX_SIDE && w * h <= EXPORT_MAX_AREA;
+        }
+
+        // 二分查找：当前比例与留白下，不超限的最大导出宽度
+        function getMaxAllowedExportWidth(pad, bbox) {
+            let lo = 1, hi = EXPORT_MAX_SIDE;
+            if (!isExportSizeAllowed(computeExportSize(lo, pad, bbox).w, computeExportSize(lo, pad, bbox).h)) return 0;
+            while (lo < hi) {
+                const mid = Math.ceil((lo + hi) / 2);
+                const s = computeExportSize(mid, pad, bbox);
+                if (isExportSizeAllowed(s.w, s.h)) lo = mid;
+                else hi = mid - 1;
+            }
+            return lo;
+        }
+
         function updateExportHeightEstimate() {
-            const bbox = getBoundingBox();
-            const expW = parseInt(document.getElementById('expWidth').value) || 1920;
-            if (bbox) {
-                const expH = Math.round(expW * (bbox.height / bbox.width));
-                document.getElementById('expHeight').value = `${expH} px (比例 1:${(bbox.height/bbox.width).toFixed(2)})`;
+            const bbox = getExportBounds();
+            const expW = Math.max(1, parseInt(document.getElementById('expWidth').value) || 1920);
+            const pad = getExportPadding();
+            if (bbox && bbox.width > 0 && bbox.height > 0) {
+                // 导出宽度 = 成品图片总宽；图形实际占 (宽度 - 左右留白)
+                const size = computeExportSize(expW, pad, bbox);
+                const expH = size.h;
+                // 超出浏览器 Canvas 上限时在高度栏直接标出，避免点了导出才发现
+                const overLimit = !isExportSizeAllowed(size.w, size.h) ? ' ⚠超限' : '';
+                document.getElementById('expHeight').value = `${expH} px (比例 1:${(expH / expW).toFixed(2)})${overLimit}`;
             } else {
                 document.getElementById('expHeight').value = "自动计算";
             }
+        }
+
+        // 把一个节点“提升”为合法的轮廓起点 m：
+        // m 只带 1 个坐标点，而 b 带 3 个（控制点1、控制点2、终点）。
+        // 所以必须只保留它的终点（最后一个点）作为新起点，不能只改 type，
+        // 否则会残留多余的点，生成 "m x1 y1 x2 y2 x3 y3" 这种坏代码，重新解析又会变成 3 个起点。
+        function promoteNodeToMoveTo(node) {
+            const end = node.points[node.points.length - 1];
+            node.type = 'm';
+            node.points = [{ x: end.x, y: end.y }];
         }
 
         // Delete Currently Selected Node
@@ -1067,14 +1493,46 @@
                 return;
             }
             saveUndoState();
-            nodes.splice(selectedNodeIdx, 1);
-            if (nodes.length > 0 && nodes[0].type !== 'm') {
-                nodes[0].type = 'm';
+            const delIdx = selectedNodeIdx;
+            const deletedWasStart = (nodes[delIdx].type === 'm');
+            nodes.splice(delIdx, 1);
+
+            // 删掉的是某个轮廓的起点 m：顶替到原位置的节点如果不是 m，
+            // 必须把它变成合法的新起点；否则它会失去起点、被“接”到上一个轮廓的末尾，
+            // 或者（位于开头时）变成带多个点的非法 m。
+            // 规则与删除直线顶点一致：被删起点连同它引出的第一段一起消失，下一个顶点成为新起点。
+            if (deletedWasStart && delIdx < nodes.length && nodes[delIdx].type !== 'm') {
+                promoteNodeToMoveTo(nodes[delIdx]);
             }
+            // 兜底：整条路径的第一个节点永远必须是 m
+            if (nodes.length > 0 && nodes[0].type !== 'm') {
+                promoteNodeToMoveTo(nodes[0]);
+            }
+
             selectedNodeIdx = -1;
             selectedPtIdx = -1;
             updateCodeFromNodes(false);
             render();
+        }
+
+        // ===== 节点重合查找表（O(N) 构建，O(1) 查询）=====
+        // 以前 isPointOverlapped() 每被调用一次就遍历全部点，而 render() 又对每个点调用一次，
+        // 整体是 O(N²)，节点几百个以上时拖动会明显卡顿。
+        // 现在把所有点按“取整后的坐标”做一次计数（键 "x,y" → 出现次数），
+        // 某点的计数 ≥ 2 即表示有其它点与它完全重合，语义与原来逐一比较完全一致。
+        // 表在节点坐标变化时（updateCodeFromNodes / render 开头）置空，首次查询时惰性重建。
+        let overlapTable = null;
+
+        function buildOverlapTable() {
+            const table = new Map();
+            for (let i = 0; i < nodes.length; i++) {
+                const pts = nodes[i].points;
+                for (let j = 0; j < pts.length; j++) {
+                    const key = Math.round(pts[j].x) + ',' + Math.round(pts[j].y);
+                    table.set(key, (table.get(key) || 0) + 1);
+                }
+            }
+            return table;
         }
 
         // Check if a point exactly overlaps another point in the path
@@ -1082,20 +1540,16 @@
         function isPointOverlapped(nodeIdx, ptIdx) {
             const p = nodes[nodeIdx] && nodes[nodeIdx].points[ptIdx];
             if (!p) return false;
-            for (let i = 0; i < nodes.length; i++) {
-                for (let j = 0; j < nodes[i].points.length; j++) {
-                    if (i === nodeIdx && j === ptIdx) continue;
-                    const q = nodes[i].points[j];
-                    if (Math.round(q.x) === Math.round(p.x) && Math.round(q.y) === Math.round(p.y)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            if (!overlapTable) overlapTable = buildOverlapTable();
+            const key = Math.round(p.x) + ',' + Math.round(p.y);
+            return (overlapTable.get(key) || 0) >= 2;
         }
 
         // Render Main View
         function render() {
+            // 每帧按当前节点坐标重新建表（惰性：真正用到时才构建一次）
+            overlapTable = null;
+
             // HiDPI: 每帧重置变换矩阵，把 1 个绘图单位映射到 dpr 个物理像素
             ctx.setTransform(viewDpr, 0, 0, viewDpr, 0, 0);
             ctx.clearRect(0, 0, viewW, viewH);
@@ -1183,24 +1637,35 @@
             // 5. Render ASS Path (Nonzero Winding Rule for Reverse Contour Hollow-Out / Solid Overlaps)
             if (nodes.length > 0) {
                 ctx.beginPath();
+                // 当前是否有一个已经开始、尚未闭合的子路径
+                let subpathOpen = false;
 
                 for (let i = 0; i < nodes.length; i++) {
                     let n = nodes[i];
                     if (n.type === 'm') {
+                        // closePath() 只作用于“当前”子路径。
+                        // 以前整条路径只在循环结束后闭合一次，多轮廓时前面的轮廓描边会少一条收口边
+                        // （fill 会自动闭合所有子路径所以填充没问题，只有 stroke 缺边）。
+                        // 因此遇到新的 m（新轮廓起点）时，先把上一个轮廓闭合。
+                        if (isClosed && subpathOpen) ctx.closePath();
                         let p = worldToScreen(n.points[0].x, n.points[0].y);
                         ctx.moveTo(p.x, p.y);
+                        subpathOpen = true;
                     } else if (n.type === 'l') {
                         let p = worldToScreen(n.points[0].x, n.points[0].y);
                         ctx.lineTo(p.x, p.y);
+                        subpathOpen = true;
                     } else if (n.type === 'b') {
                         let p1 = worldToScreen(n.points[0].x, n.points[0].y);
                         let p2 = worldToScreen(n.points[1].x, n.points[1].y);
                         let p3 = worldToScreen(n.points[2].x, n.points[2].y);
                         ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+                        subpathOpen = true;
                     }
                 }
 
-                if (isClosed) ctx.closePath();
+                // 闭合最后一个轮廓
+                if (isClosed && subpathOpen) ctx.closePath();
 
                 // Standard ASS Nonzero Fill Rule
                 ctx.fillStyle = fillColor;
@@ -1421,31 +1886,96 @@
             ctx.stroke();
         }
 
-        // Pointer Events Handling
-        function onPointerDown(e) {
+        // Canvas input owns pointer IDs, not a global "any pointer is down" flag.
+        const canvasPointers = new Map();
+        let canvasGesture = null;
+        let canvasWaitForLift = false;
+        const minCanvasScale = 0.1;
+        const maxCanvasScale = 20;
+
+        function canvasInputBusy() {
+            return canvasGesture !== null || canvasPointers.size > 0 || canvasWaitForLift;
+        }
+
+        function canvasPoint(e) {
             const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
 
-            lastDragMousePt = { x: mouseX, y: mouseY };
-
-            if (currentMode === 'pan' || e.button === 1) {
-                isDragging = true;
-                return;
+        function releaseCanvasPointer(id) {
+            try {
+                if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+            } catch (err) {
+                // Cancellation may already have released the pointer.
             }
+        }
 
-            const worldPt = screenToWorld(mouseX, mouseY);
+        function zoomCanvasAt(nextScale, sx, sy, anchor = null) {
+            if (!Number.isFinite(nextScale) || nextScale <= 0) return;
+            // Do not use rounded screenToWorld() here: rounding makes zoom drift.
+            const world = anchor || { x: (sx - offsetX) / scale, y: (sy - offsetY) / scale };
+            scale = Math.max(minCanvasScale, Math.min(maxCanvasScale, nextScale));
+            offsetX = sx - world.x * scale;
+            offsetY = sy - world.y * scale;
+            render();
+            updateInfoTag();
+        }
 
-            if (currentMode === 'move') {
+        function zoomCanvasFromCenter(nextScale) {
+            stopCanvasInteraction(true);
+            if (tpDragging) endTouchpadStroke(false);
+            zoomCanvasAt(nextScale, viewW / 2, viewH / 2);
+        }
+
+        function addCanvasDrawingPoint(mode, worldPt) {
+            saveUndoState();
+            if (mode === 'start_m' || nodes.length === 0) {
+                nodes.push(new PathNode('m', [worldPt]));
+            } else if (mode === 'line') {
+                nodes.push(new PathNode('l', [worldPt]));
+            } else if (mode === 'bezier') {
+                let prevPt = nodes[nodes.length-1].points[nodes[nodes.length-1].points.length-1];
+                let h1 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.3), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.3) };
+                let h2 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.7), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.7) };
+                nodes.push(new PathNode('b', [h1, h2, worldPt]));
+            }
+            updateCodeFromNodes(false);
+            if (mode === 'start_m') setToolMode('line', document.getElementById('toolLine'));
+        }
+
+        function beginCanvasSingle(e, point) {
+            const mode = e.button === 1 ? 'pan' : currentMode;
+            canvasGesture = {
+                kind: 'single',
+                id: e.pointerId,
+                pointerType: e.pointerType || 'mouse',
+                buttonMask: e.button === 1 ? 4 : 1,
+                mode: mode,
+                nodeList: nodes,
+                selectionBefore: [selectedNodeIdx, selectedPtIdx, selectedContourIdx],
+                snapshot: null,
+                dirty: false,
+                drawPoint: null
+            };
+            isDragging = false;
+            pendingUndoSnapshot = null;
+            contourDragRemainder.x = 0;
+            contourDragRemainder.y = 0;
+            lastDragMousePt = point;
+            snappedNodePos = null;
+            currentActiveGuides = [];
+
+            if (mode === 'pan') {
+                isDragging = true;
+            } else if (mode === 'move') {
                 selectedNodeIdx = -1;
                 selectedPtIdx = -1;
                 let minDist = 16;
-
                 for (let i = 0; i < nodes.length; i++) {
-                    let n = nodes[i];
-                    for (let j = 0; j < n.points.length; j++) {
-                        let scrP = worldToScreen(n.points[j].x, n.points[j].y);
-                        let dist = Math.hypot(scrP.x - mouseX, scrP.y - mouseY);
+                    for (let j = 0; j < nodes[i].points.length; j++) {
+                        const p = nodes[i].points[j];
+                        const scrP = worldToScreen(p.x, p.y);
+                        const dist = Math.hypot(scrP.x - point.x, scrP.y - point.y);
                         if (dist < minDist) {
                             minDist = dist;
                             selectedNodeIdx = i;
@@ -1453,24 +1983,16 @@
                         }
                     }
                 }
-
-                if (selectedNodeIdx !== -1) {
-                    // 只暂存快照，真正移动后才写入撤销栈
-                    pendingUndoSnapshot = captureUndoSnapshot();
-                    isDragging = true;
-                }
-            } else if (currentMode === 'move_contour') {
+                isDragging = selectedNodeIdx !== -1;
+            } else if (mode === 'move_contour') {
                 selectedContourIdx = -1;
-                let contours = getContours();
+                const contours = getContours();
                 let minDist = 25;
-
                 for (let cIdx = 0; cIdx < contours.length; cIdx++) {
-                    let nodeIndices = contours[cIdx];
-                    for (let iIdx of nodeIndices) {
-                        let n = nodes[iIdx];
-                        for (let p of n.points) {
-                            let scrP = worldToScreen(p.x, p.y);
-                            let dist = Math.hypot(scrP.x - mouseX, scrP.y - mouseY);
+                    for (let iIdx of contours[cIdx]) {
+                        for (let p of nodes[iIdx].points) {
+                            const scrP = worldToScreen(p.x, p.y);
+                            const dist = Math.hypot(scrP.x - point.x, scrP.y - point.y);
                             if (dist < minDist) {
                                 minDist = dist;
                                 selectedContourIdx = cIdx;
@@ -1478,73 +2000,220 @@
                         }
                     }
                 }
-
-                if (selectedContourIdx !== -1) {
-                    // 只暂存快照，真正移动后才写入撤销栈
-                    pendingUndoSnapshot = captureUndoSnapshot();
-                    isDragging = true;
-                }
-                render();
-            } else if (currentMode === 'start_m') {
-                saveUndoState();
-                nodes.push(new PathNode('m', [worldPt]));
-                updateCodeFromNodes(false);
-                setToolMode('line', document.getElementById('toolLine'));
-            } else if (currentMode === 'line') {
-                saveUndoState();
-                if (nodes.length === 0) {
-                    nodes.push(new PathNode('m', [worldPt]));
-                } else {
-                    nodes.push(new PathNode('l', [worldPt]));
-                }
-                updateCodeFromNodes(false);
-            } else if (currentMode === 'bezier') {
-                saveUndoState();
-                if (nodes.length === 0) {
-                    nodes.push(new PathNode('m', [worldPt]));
-                } else {
-                    let prevPt = nodes[nodes.length-1].points[nodes[nodes.length-1].points.length-1];
-                    let h1 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.3), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.3) };
-                    let h2 = { x: Math.round(prevPt.x + (worldPt.x - prevPt.x) * 0.7), y: Math.round(prevPt.y + (worldPt.y - prevPt.y) * 0.7) };
-                    nodes.push(new PathNode('b', [h1, h2, worldPt]));
-                }
-                updateCodeFromNodes(false);
+                isDragging = selectedContourIdx !== -1;
+            } else if (['start_m', 'line', 'bezier'].includes(mode)) {
+                const worldPt = screenToWorld(point.x, point.y);
+                // A finger can be the first half of a pinch. Confirm its new point
+                // only on release; pen and mouse keep the original down-to-draw behavior.
+                if (canvasGesture.pointerType === 'touch') canvasGesture.drawPoint = worldPt;
+                else addCanvasDrawingPoint(mode, worldPt);
             }
 
+            if (isDragging && mode !== 'pan') {
+                canvasGesture.snapshot = captureUndoSnapshot();
+                pendingUndoSnapshot = canvasGesture.snapshot;
+            }
             render();
         }
 
-        function onPointerMove(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
+        function noteCanvasEdit() {
+            if (canvasGesture.pointerType !== 'touch') commitPendingUndo();
+            canvasGesture.dirty = true;
+        }
 
-            const dxScreen = mouseX - lastDragMousePt.x;
-            const dyScreen = mouseY - lastDragMousePt.y;
-            lastDragMousePt = { x: mouseX, y: mouseY };
-
+        function finishCanvasGesture(cancelTouch, confirmDraw = true) {
+            const gesture = canvasGesture;
+            // Clear ownership before callbacks or releasePointerCapture can re-enter.
+            canvasGesture = null;
+            isDragging = false;
+            contourDragRemainder.x = 0;
+            contourDragRemainder.y = 0;
             snappedNodePos = null;
             currentActiveGuides = [];
 
-            let rawWorldPt = screenToWorld(mouseX, mouseY);
+            if (gesture && gesture.kind === 'single' && gesture.pointerType === 'touch' && nodes === gesture.nodeList) {
+                if (cancelTouch) {
+                    // Touch drags are previews until release. A second finger or
+                    // a pen takeover restores geometry without undo/redo pollution.
+                    if (gesture.dirty && gesture.snapshot) {
+                        nodes = gesture.snapshot.nodes.map(n => n.clone());
+                        updateCodeFromNodes(false);
+                    }
+                    [selectedNodeIdx, selectedPtIdx, selectedContourIdx] = gesture.selectionBefore;
+                } else if (gesture.drawPoint) {
+                    if (confirmDraw) addCanvasDrawingPoint(gesture.mode, gesture.drawPoint);
+                } else if (gesture.dirty && gesture.snapshot) {
+                    pendingUndoSnapshot = gesture.snapshot;
+                    commitPendingUndo();
+                }
+            }
+
+            pendingUndoSnapshot = null;
+            render();
+        }
+
+        function stopCanvasInteraction(keepTouchEdits = false) {
+            if (!canvasInputBusy()) return;
+            const ids = Array.from(canvasPointers.keys());
+            canvasPointers.clear();
+            canvasWaitForLift = false;
+            // UI actions retain an existing drag, but never confirm an unfinished tap.
+            finishCanvasGesture(keepTouchEdits !== true, false);
+            ids.forEach(releaseCanvasPointer);
+        }
+
+        function pinchGeometry(ids) {
+            const first = canvasPointers.get(ids[0]);
+            const second = canvasPointers.get(ids[1]);
+            if (!first || !second) return null;
+            const a = canvasPoint(first);
+            const b = canvasPoint(second);
+            return {
+                x: (a.x + b.x) / 2,
+                y: (a.y + b.y) / 2,
+                distance: Math.hypot(b.x - a.x, b.y - a.y)
+            };
+        }
+
+        function beginCanvasPinch(firstId, secondId) {
+            finishCanvasGesture(true);
+            const ids = [firstId, secondId];
+            const center = pinchGeometry(ids);
+            if (!center) return;
+            canvasGesture = {
+                kind: 'pinch',
+                ids: ids,
+                distance: center.distance,
+                scale: scale,
+                anchor: { x: (center.x - offsetX) / scale, y: (center.y - offsetY) / scale }
+            };
+            canvasWaitForLift = false;
+            updateInfoTag();
+        }
+
+        function onPointerDown(e) {
+            const type = e.pointerType || 'mouse';
+            if ((type === 'mouse' && e.button !== 0 && e.button !== 1) || (type === 'pen' && e.button !== 0)) return;
+            if (e.cancelable) e.preventDefault();
+            if (tpDragging || canvasPointers.has(e.pointerId)) return;
+
+            canvasPointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY, type: type });
+            try {
+                canvas.setPointerCapture(e.pointerId);
+            } catch (err) {
+                // Window listeners below also handle release/move outside the canvas.
+            }
+
+            // Pen takes precedence over touch, including a palm that landed first.
+            // Additional contacts cannot edit or zoom while a pen/mouse owns a stroke.
+            if (type === 'pen' && (!canvasGesture || canvasGesture.kind === 'pinch' || canvasGesture.pointerType === 'touch')) {
+                if (canvasGesture) finishCanvasGesture(true);
+                canvasWaitForLift = false;
+                beginCanvasSingle(e, canvasPoint(e));
+                return;
+            }
+
+            if (canvasWaitForLift) return;
+            if (!canvasGesture) {
+                if (canvasPointers.size !== 1 || (type === 'touch' && e.isPrimary === false)) {
+                    canvasWaitForLift = true;
+                    return;
+                }
+                beginCanvasSingle(e, canvasPoint(e));
+            } else if (type === 'touch' && canvasGesture.kind === 'single' && canvasGesture.pointerType === 'touch' && canvasPointers.size === 2) {
+                beginCanvasPinch(canvasGesture.id, e.pointerId);
+            }
+        }
+
+        function updateCanvasGuides(point, mode, dragging) {
+            currentActiveGuides = [];
+            let activePt = null;
+            if (mode === 'move' && hasValidSelection()) {
+                activePt = nodes[selectedNodeIdx].points[selectedPtIdx];
+            } else if (dragging || mode === 'line' || mode === 'bezier') {
+                activePt = screenToWorld(point.x, point.y);
+            }
+            if (!showGuides || !activePt) return;
+            const tol = 2;
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = 0; j < nodes[i].points.length; j++) {
+                    if (mode === 'move' && i === selectedNodeIdx && j === selectedPtIdx) continue;
+                    const otherP = nodes[i].points[j];
+                    if (Math.abs(activePt.x - otherP.x) <= tol && !currentActiveGuides.some(g => g.type === 'v' && g.pos === otherP.x)) {
+                        currentActiveGuides.push({ type: 'v', pos: otherP.x });
+                    }
+                    if (Math.abs(activePt.y - otherP.y) <= tol && !currentActiveGuides.some(g => g.type === 'h' && g.pos === otherP.y)) {
+                        currentActiveGuides.push({ type: 'h', pos: otherP.y });
+                    }
+                }
+            }
+        }
+
+        function updateCanvasPointerInfo(point) {
+            const wpt = screenToWorld(point.x, point.y);
+            document.getElementById('infoTag').innerText = `X: ${wpt.x} | Y: ${wpt.y} | 画布缩放: ${Math.round(scale*100)}% | 背景图缩放: ${Math.round(bgImgScale*100)}% | 节点数: ${nodes.length}`;
+        }
+
+        function onPointerMove(e) {
+            const pointer = canvasPointers.get(e.pointerId);
+            const point = canvasPoint(e);
+            if (!pointer) {
+                if (canvasInputBusy() || tpDragging || e.pointerType === 'touch' || e.buttons !== 0) return;
+                snappedNodePos = null;
+                updateCanvasGuides(point, currentMode, false);
+                render();
+                updateCanvasPointerInfo(point);
+                return;
+            }
+            if (e.cancelable) e.preventDefault();
+            pointer.clientX = e.clientX;
+            pointer.clientY = e.clientY;
+            const gesture = canvasGesture;
+            if (!gesture) return;
+
+            if (gesture.kind === 'pinch') {
+                if (!gesture.ids.includes(e.pointerId)) return;
+                const center = pinchGeometry(gesture.ids);
+                if (!center || center.distance < 1) return;
+                if (gesture.distance < 1) {
+                    gesture.distance = center.distance;
+                    gesture.scale = scale;
+                    gesture.anchor = { x: (center.x - offsetX) / scale, y: (center.y - offsetY) / scale };
+                }
+                zoomCanvasAt(gesture.scale * center.distance / gesture.distance, center.x, center.y, gesture.anchor);
+                updateCanvasPointerInfo(center);
+                return;
+            }
+
+            if (gesture.id !== e.pointerId) return;
+            if (gesture.pointerType !== 'touch' && !(e.buttons & gesture.buttonMask)) {
+                finishCanvasPointer(e, false);
+                return;
+            }
+            if (nodes !== gesture.nodeList) {
+                stopCanvasInteraction();
+                return;
+            }
+
+            const dxScreen = point.x - lastDragMousePt.x;
+            const dyScreen = point.y - lastDragMousePt.y;
+            lastDragMousePt = point;
+            snappedNodePos = null;
+            const rawWorldPt = screenToWorld(point.x, point.y);
 
             if (isDragging) {
-                if (currentMode === 'pan' || e.button === 1) {
+                if (gesture.mode === 'pan') {
                     offsetX += dxScreen;
                     offsetY += dyScreen;
-                } else if (currentMode === 'move' && selectedNodeIdx !== -1 && selectedPtIdx !== -1) {
+                } else if (gesture.mode === 'move' && hasValidSelection()) {
                     let finalWorldPt = { x: rawWorldPt.x, y: rawWorldPt.y };
-
-                    // Magnetic Snapping Logic
                     if (enableMagneticSnap) {
-                        let snapDistanceScreen = 14;
                         for (let i = 0; i < nodes.length; i++) {
                             for (let j = 0; j < nodes[i].points.length; j++) {
                                 if (i === selectedNodeIdx && j === selectedPtIdx) continue;
-                                let targetP = nodes[i].points[j];
-                                let targetScrP = worldToScreen(targetP.x, targetP.y);
-                                let dist = Math.hypot(targetScrP.x - mouseX, targetScrP.y - mouseY);
-                                if (dist < snapDistanceScreen) {
+                                const targetP = nodes[i].points[j];
+                                const targetScrP = worldToScreen(targetP.x, targetP.y);
+                                if (Math.hypot(targetScrP.x - point.x, targetScrP.y - point.y) < 14) {
                                     finalWorldPt = { x: targetP.x, y: targetP.y };
                                     snappedNodePos = { x: targetP.x, y: targetP.y };
                                     break;
@@ -1553,24 +2222,24 @@
                             if (snappedNodePos) break;
                         }
                     }
-
                     const curPt = nodes[selectedNodeIdx].points[selectedPtIdx];
                     if (curPt.x !== finalWorldPt.x || curPt.y !== finalWorldPt.y) {
-                        // 第一次真正发生位移，才把按下时的快照写入撤销栈
-                        commitPendingUndo();
+                        noteCanvasEdit();
                         nodes[selectedNodeIdx].points[selectedPtIdx] = finalWorldPt;
                         updateCodeFromNodes(false);
                     }
-                } else if (currentMode === 'move_contour' && selectedContourIdx !== -1) {
+                } else if (gesture.mode === 'move_contour' && selectedContourIdx !== -1) {
                     const contours = getContours();
                     if (selectedContourIdx < contours.length) {
-                        let dxWorld = Math.round(dxScreen / scale);
-                        let dyWorld = Math.round(dyScreen / scale);
+                        contourDragRemainder.x += dxScreen / scale;
+                        contourDragRemainder.y += dyScreen / scale;
+                        const dxWorld = Math.round(contourDragRemainder.x);
+                        const dyWorld = Math.round(contourDragRemainder.y);
+                        contourDragRemainder.x -= dxWorld;
+                        contourDragRemainder.y -= dyWorld;
                         if (dxWorld !== 0 || dyWorld !== 0) {
-                            // 第一次真正发生位移，才把按下时的快照写入撤销栈
-                            commitPendingUndo();
-                            let nodeIndices = contours[selectedContourIdx];
-                            for (let iIdx of nodeIndices) {
+                            noteCanvasEdit();
+                            for (let iIdx of contours[selectedContourIdx]) {
                                 for (let p of nodes[iIdx].points) {
                                     p.x += dxWorld;
                                     p.y += dyWorld;
@@ -1582,64 +2251,76 @@
                 }
             }
 
-            // Parallel / Vertical Alignment Tolerance Check (+- 2px)
-            let activePt = null;
-            if (currentMode === 'move' && selectedNodeIdx !== -1 && selectedPtIdx !== -1) {
-                activePt = nodes[selectedNodeIdx].points[selectedPtIdx];
-            } else if (isDragging || currentMode === 'line' || currentMode === 'bezier') {
-                activePt = rawWorldPt;
-            }
-
-            if (showGuides && activePt) {
-                const tol = 2; // 2px tolerance for smooth detection
-                for (let i = 0; i < nodes.length; i++) {
-                    for (let j = 0; j < nodes[i].points.length; j++) {
-                        if (currentMode === 'move' && i === selectedNodeIdx && j === selectedPtIdx) continue;
-                        let otherP = nodes[i].points[j];
-
-                        if (Math.abs(activePt.x - otherP.x) <= tol) {
-                            if (!currentActiveGuides.some(g => g.type === 'v' && g.pos === otherP.x)) {
-                                currentActiveGuides.push({ type: 'v', pos: otherP.x });
-                            }
-                        }
-                        if (Math.abs(activePt.y - otherP.y) <= tol) {
-                            if (!currentActiveGuides.some(g => g.type === 'h' && g.pos === otherP.y)) {
-                                currentActiveGuides.push({ type: 'h', pos: otherP.y });
-                            }
-                        }
-                    }
-                }
-            }
-
+            updateCanvasGuides(point, isDragging ? gesture.mode : currentMode, isDragging);
             render();
-
-            let wpt = screenToWorld(mouseX, mouseY);
-            document.getElementById('infoTag').innerText = `X: ${wpt.x} | Y: ${wpt.y} | 画布缩放: ${Math.round(scale*100)}% | 背景图缩放: ${Math.round(bgImgScale*100)}% | 节点数: ${nodes.length}`;
+            updateCanvasPointerInfo(point);
         }
 
-        function onPointerUp() {
-            isDragging = false;
-            // 松开时若从未移动，暂存快照直接丢弃，不产生空撤销记录
-            pendingUndoSnapshot = null;
-            snappedNodePos = null;
-            currentActiveGuides = [];
-            // Re-render so an overlapped node released without further dragging
-            // reverts from red back to green automatically.
-            render();
+        function finishCanvasPointer(e, cancelled) {
+            if (!canvasPointers.has(e.pointerId)) return;
+            canvasPointers.delete(e.pointerId);
+            const gesture = canvasGesture;
+            const ownsGesture = gesture && (gesture.kind === 'single'
+                ? gesture.id === e.pointerId : gesture.ids.includes(e.pointerId));
+            if (ownsGesture) {
+                finishCanvasGesture(cancelled);
+                // Never turn the remaining half of a pinch into a drawing gesture.
+                canvasWaitForLift = canvasPointers.size > 0;
+            }
+            if (canvasPointers.size === 0) canvasWaitForLift = false;
+            releaseCanvasPointer(e.pointerId);
         }
 
-        canvas.addEventListener('pointerdown', onPointerDown);
-        canvas.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
+        function onPointerUp(e) {
+            finishCanvasPointer(e, false);
+        }
 
-        // Canvas Zoom via Wheel
+        function onCanvasPointerCancel(e) {
+            finishCanvasPointer(e, true);
+        }
+
+        canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+        canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+        canvas.addEventListener('lostpointercapture', onCanvasPointerCancel);
+        window.addEventListener('pointerup', onPointerUp, true);
+        window.addEventListener('pointercancel', onCanvasPointerCancel, true);
+        window.addEventListener('pointermove', (e) => {
+            if (e.target !== canvas && canvasPointers.has(e.pointerId)) onPointerMove(e);
+        }, { capture: true, passive: false });
+        window.addEventListener('blur', stopCanvasInteraction);
+        window.addEventListener('resize', stopCanvasInteraction);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopCanvasInteraction();
+        });
+
+        // Finish input before another UI action replaces nodes or changes tools.
+        document.addEventListener('click', (e) => {
+            if (e.target instanceof Element && e.target.closest('button, input, textarea, select, a')) stopCanvasInteraction(true);
+        }, true);
+        window.addEventListener('keydown', (e) => {
+            if (e.target instanceof Element && e.target.matches('input, textarea, select, [contenteditable="true"]')) return;
+            const key = e.key.toLowerCase();
+            if (key === 'escape' && canvasInputBusy()) {
+                e.preventDefault();
+                stopCanvasInteraction();
+            } else if (key === 'delete' || key === 'backspace' || ((e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y'))) {
+                stopCanvasInteraction(true);
+            }
+        }, true);
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => {
+            canvas.addEventListener(type, (e) => {
+                if (e.cancelable) e.preventDefault();
+            }, { passive: false });
+        });
+
+        // Canvas-only wheel zoom, anchored at the cursor, in CSS coordinates.
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            let zoomFactor = e.deltaY < 0 ? 1.15 : 0.9;
-            scale *= zoomFactor;
-            scale = Math.max(0.1, Math.min(scale, 20.0));
-            render();
-            updateInfoTag();
+            if (canvasInputBusy() || tpDragging || e.deltaY === 0) return;
+            const point = canvasPoint(e);
+            zoomCanvasAt(scale * (e.deltaY < 0 ? 1.15 : 0.9), point.x, point.y);
         }, { passive: false });
 
         // Update Tag Info
@@ -1761,6 +2442,17 @@
             }
         }
 
+        // 触控板悬浮窗的位置与大小写入本地设置（localStorage 不可用时自动跳过）
+        function saveTouchpadFloatRect() {
+            if (!tpFloatRect) return;
+            Prefs.setJSON('touchpad.rect', {
+                left: Math.round(tpFloatRect.left),
+                top: Math.round(tpFloatRect.top),
+                width: Math.round(tpFloatRect.width),
+                height: Math.round(tpFloatRect.height)
+            });
+        }
+
         function setTouchpadOpen(open) {
             if (!open) endTouchpadStroke(true);
             tpOpen = open;
@@ -1769,6 +2461,8 @@
             tpFloatingNote.style.display = (open && tpFloating) ? 'block' : 'none';
             if (open && tpFloating) clampFloatingPad();
             updateTouchpadInfo();
+            // 记住展开/收起状态，刷新后沿用
+            Prefs.setBool('touchpad.open', open);
         }
 
         function setTouchpadFloating(floating) {
@@ -1784,6 +2478,7 @@
                 }
                 applyFloatRect();
                 btnTpFloat.innerText = '📥 停靠';
+                saveTouchpadFloatRect();
             } else {
                 tpWrap.classList.remove('floating');
                 tpWrap.style.left = tpWrap.style.top = tpWrap.style.width = tpWrap.style.height = '';
@@ -1792,6 +2487,8 @@
             }
             tpFloatingNote.style.display = (tpOpen && tpFloating) ? 'block' : 'none';
             updateTouchpadInfo();
+            // 记住悬浮/停靠状态，刷新后沿用
+            Prefs.setBool('touchpad.floating', floating);
         }
 
         function applyFloatRect() {
@@ -1818,6 +2515,8 @@
         document.getElementById('tpSensitivity').oninput = function(e) {
             tpSensitivity = parseFloat(e.target.value) || 1;
             document.getElementById('tpSensText').innerText = tpSensitivity.toFixed(1) + 'x';
+            // 记住灵敏度，刷新后沿用
+            Prefs.set('touchpad.sensitivity', tpSensitivity);
         };
 
         // Recompute alignment guides for the actively moved node (same rules as canvas drag)
@@ -1861,6 +2560,7 @@
         tpArea.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (canvasInputBusy()) return;
             // A second finger while a stroke is active = possible pinch: abort stroke, never zoom
             if (tpPointerId !== null && e.pointerId !== tpPointerId) {
                 endTouchpadStroke(false);
@@ -1979,7 +2679,13 @@
                 }
                 clampFloatingPad();
             });
-            const stop = (e) => { if (e.pointerId === pid) pid = null; };
+            const stop = (e) => {
+                if (e.pointerId === pid) {
+                    pid = null;
+                    // 拖动/缩放结束才写入，避免移动过程中频繁写 localStorage
+                    saveTouchpadFloatRect();
+                }
+            };
             handle.addEventListener('pointerup', stop);
             handle.addEventListener('pointercancel', stop);
             ['touchstart', 'touchmove'].forEach(evt => {
@@ -1990,6 +2696,31 @@
         }
         bindFloatDrag(tpHeader, 'move');
         bindFloatDrag(tpResize, 'resize');
+
+        // 恢复上次的触控板界面状态：灵敏度 → 悬浮位置/大小 → 悬浮或停靠 → 展开或收起。
+        // localStorage 不可用（例如安卓 Chrome 双击打开 file:// 本地文件）时，
+        // Prefs 全部返回默认值，这里等于什么都不做，行为与改动前完全一致。
+        (function restoreTouchpadPrefs() {
+            const sens = parseFloat(Prefs.get('touchpad.sensitivity', ''));
+            if (!isNaN(sens) && sens >= 0.1 && sens <= 3) {
+                tpSensitivity = sens;
+                document.getElementById('tpSensitivity').value = String(sens);
+                document.getElementById('tpSensText').innerText = sens.toFixed(1) + 'x';
+            }
+
+            const rect = Prefs.getJSON('touchpad.rect', null);
+            if (rect && ['left', 'top', 'width', 'height'].every(k => typeof rect[k] === 'number' && isFinite(rect[k]))) {
+                tpFloatRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+            }
+
+            if (Prefs.getBool('touchpad.floating', false)) {
+                setTouchpadFloating(true);
+                clampFloatingPad();   // 换了屏幕尺寸也不会跑到可视区外
+            }
+            if (Prefs.getBool('touchpad.open', false)) {
+                setTouchpadOpen(true);
+            }
+        })();
 
         // Keyboard Shortcuts
         window.addEventListener('keydown', (e) => {
@@ -2008,21 +2739,15 @@
 
         // Canvas Zoom Buttons
         document.getElementById('btnZoomIn').onclick = function() {
-            scale *= 1.25;
-            render();
-            updateInfoTag();
+            zoomCanvasFromCenter(scale * 1.25);
         };
 
         document.getElementById('btnZoomOut').onclick = function() {
-            scale *= 0.8;
-            render();
-            updateInfoTag();
+            zoomCanvasFromCenter(scale * 0.8);
         };
 
         document.getElementById('btnZoom100').onclick = function() {
-            scale = 1.0;
-            render();
-            updateInfoTag();
+            zoomCanvasFromCenter(1.0);
         };
 
         // Code Area Event Bindings
@@ -2140,56 +2865,99 @@
             updateInfoTag();
         };
 
-        // Export PNG
+        // ================== Export PNG ==================
         document.getElementById('expWidth').oninput = updateExportHeightEstimate;
+        document.getElementById('expPadding').oninput = updateExportHeightEstimate;
+        // 勾选“透明”时背景色选择框置灰（默认勾选 = 透明背景）
+        document.getElementById('expBgTransparent').onchange = function(e) {
+            document.getElementById('expBgColor').disabled = e.target.checked;
+        };
 
         document.getElementById('btnExportPng').onclick = function() {
-            const bbox = getBoundingBox();
+            // 用曲线真实边界（含贝塞尔极值），保证“不留白”时图形四边与图片边缘严丝合缝
+            const bbox = getExportBounds();
             if (!bbox) {
                 alert('画布上没有有效的矢量路径选区可以导出！');
                 return;
             }
+            if (bbox.width <= 0 || bbox.height <= 0) {
+                alert('当前图形是一条纯水平或纯垂直的线，没有面积，无法导出为图片！');
+                return;
+            }
 
-            const targetW = parseInt(document.getElementById('expWidth').value) || 1920;
-            const targetH = Math.round(targetW * (bbox.height / bbox.width));
+            const pad = getExportPadding();
+            const targetW = Math.max(1, parseInt(document.getElementById('expWidth').value) || 1920);
+
+            // 导出宽度 = 成品图片总宽；图形实际占 (总宽 - 左右留白)，上下同理
+            const innerW = Math.max(1, targetW - pad * 2);
+            const scaleX = innerW / bbox.width;
+            const innerH = Math.max(1, Math.round(bbox.height * scaleX));
+            // innerH 取整后与 bbox.height*scaleX 可能差半个像素，
+            // 这里用 innerH 反推 scaleY，确保上下两条边也精确贴边；
+            // scaleX 与 scaleY 的相对差异小于 0.5/innerH（通常 < 0.03%），肉眼不可察。
+            const scaleY = innerH / bbox.height;
+            const targetH = innerH + pad * 2;
+
+            // 导出前先检查成品尺寸是否超过浏览器 Canvas 上限。
+            // 超限的 canvas 不会报错，但画不出任何内容，最终只会下载到一张空白图片。
+            if (!isExportSizeAllowed(targetW, targetH)) {
+                const maxW = getMaxAllowedExportWidth(pad, bbox);
+                alert(`导出尺寸 ${targetW} × ${targetH} px 超过了浏览器 Canvas 的上限` +
+                      `（单边最大 ${EXPORT_MAX_SIDE} px，总像素最多 ${EXPORT_MAX_AREA.toLocaleString()}），` +
+                      `继续导出只会得到空白图片，已取消。\n\n` +
+                      (maxW > 0
+                          ? `按当前图形比例与留白，导出宽度最大可设为 ${maxW} px，请调小后重试。`
+                          : `当前图形过于细长，请先缩小留白或调整图形比例后重试。`));
+                return;
+            }
+
             const expColor = document.getElementById('expFillColor').value;
+            const bgTransparent = document.getElementById('expBgTransparent').checked;
+            const bgColor = document.getElementById('expBgColor').value;
 
             const offCanvas = document.createElement('canvas');
             offCanvas.width = targetW;
             offCanvas.height = targetH;
             const offCtx = offCanvas.getContext('2d');
-
-            const scaleFactor = targetW / bbox.width;
-
-            offCtx.save();
-            offCtx.beginPath();
-
-            for (let i = 0; i < nodes.length; i++) {
-                let n = nodes[i];
-                if (n.type === 'm') {
-                    let x = (n.points[0].x - bbox.minX) * scaleFactor;
-                    let y = (n.points[0].y - bbox.minY) * scaleFactor;
-                    offCtx.moveTo(x, y);
-                } else if (n.type === 'l') {
-                    let x = (n.points[0].x - bbox.minX) * scaleFactor;
-                    let y = (n.points[0].y - bbox.minY) * scaleFactor;
-                    offCtx.lineTo(x, y);
-                } else if (n.type === 'b') {
-                    let x1 = (n.points[0].x - bbox.minX) * scaleFactor;
-                    let y1 = (n.points[0].y - bbox.minY) * scaleFactor;
-                    let x2 = (n.points[1].x - bbox.minX) * scaleFactor;
-                    let y2 = (n.points[1].y - bbox.minY) * scaleFactor;
-                    let x3 = (n.points[2].x - bbox.minX) * scaleFactor;
-                    let y3 = (n.points[2].y - bbox.minY) * scaleFactor;
-                    offCtx.bezierCurveTo(x1, y1, x2, y2, x3, y3);
-                }
+            if (!offCtx) {
+                alert('浏览器无法为 ' + targetW + ' × ' + targetH + ' px 的图片分配绘图内存，导出已取消。\n请调小导出宽度后重试。');
+                return;
             }
 
+            // 背景：默认透明（不做任何填充，PNG 保留透明通道）；
+            // 取消勾选“透明”后，用所选颜色铺满整张图片（含留白区域）。
+            if (!bgTransparent) {
+                offCtx.fillStyle = bgColor;
+                offCtx.fillRect(0, 0, targetW, targetH);
+            }
+
+            // 世界坐标 -> 导出画布坐标：先按真实边界归零并缩放，再整体偏移出四周留白
+            const tx = x => (x - bbox.minX) * scaleX + pad;
+            const ty = y => (y - bbox.minY) * scaleY + pad;
+
+            offCtx.beginPath();
+            for (let i = 0; i < nodes.length; i++) {
+                const n = nodes[i];
+                if (!n.points || n.points.length === 0) continue;
+                if (n.type === 'm') {
+                    offCtx.moveTo(tx(n.points[0].x), ty(n.points[0].y));
+                } else if (n.type === 'l') {
+                    offCtx.lineTo(tx(n.points[0].x), ty(n.points[0].y));
+                } else if (n.type === 'b') {
+                    offCtx.bezierCurveTo(
+                        tx(n.points[0].x), ty(n.points[0].y),
+                        tx(n.points[1].x), ty(n.points[1].y),
+                        tx(n.points[2].x), ty(n.points[2].y)
+                    );
+                }
+            }
             if (isClosed) offCtx.closePath();
 
+            // 只填充、不描边：边缘抗锯齿仅在「图形色 ↔ 背景」之间过渡，
+            // 不会出现深色细框或杂色；globalAlpha 保持 1，颜色不被稀释。
+            offCtx.globalAlpha = 1.0;
             offCtx.fillStyle = expColor;
             offCtx.fill('nonzero');
-            offCtx.restore();
 
             const now = new Date();
             const dateStr = now.getFullYear().toString() +
@@ -2200,9 +2968,22 @@
                 now.getSeconds().toString().padStart(2, '0');
             const filename = `assdraw_${dateStr}.png`;
 
+            // 生成后再校验一次：低内存设备即使未超过名义上限也可能生成失败，
+            // 此时 toDataURL() 会抛错或返回空的 "data:,"，不能把它当成图片下载。
+            let dataUrl = '';
+            try {
+                dataUrl = offCanvas.toDataURL('image/png');
+            } catch (err) {
+                dataUrl = '';
+            }
+            if (!dataUrl || dataUrl === 'data:,' || dataUrl.indexOf('data:image/png') !== 0) {
+                alert('图片生成失败（' + targetW + ' × ' + targetH + ' px 可能超出了本设备的内存或 Canvas 限制），导出已取消。\n请调小导出宽度后重试。');
+                return;
+            }
+
             const link = document.createElement('a');
             link.download = filename;
-            link.href = offCanvas.toDataURL('image/png');
+            link.href = dataUrl;
             link.click();
         };
 
