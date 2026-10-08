@@ -277,6 +277,54 @@
             cursor: not-allowed;
         }
 
+        /* 描摹背景图「选择文件」：红色立体凸起；按钮右侧「未选择任何文件」提示固定为小号字（11px） */
+        #imgLoader { font-size: 11px; }
+        #imgLoader::file-selector-button {
+            background: linear-gradient(to bottom, #e05555, #aa2020);
+            color: #ffffff;
+            padding: 5px 12px;
+            margin-right: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            border-top: 1px solid #ff8888;
+            border-left: 1px solid #ff8888;
+            border-bottom: 2px solid #5a0000;
+            border-right: 2px solid #5a0000;
+            box-shadow: 1px 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+        #imgLoader::file-selector-button:hover {
+            background: linear-gradient(to bottom, #ee6666, #bb2828);
+            border-top-color: #ffaaaa;
+            border-left-color: #ffaaaa;
+        }
+        #imgLoader::file-selector-button:active {
+            background: linear-gradient(to bottom, #8a1010, #c03030);
+            border-top: 2px solid #4a0000;
+            border-left: 2px solid #4a0000;
+            border-bottom: 1px solid #ee8888;
+            border-right: 1px solid #ee8888;
+            box-shadow: inset 1px 1px 3px rgba(0,0,0,0.8);
+        }
+        #imgLoader::-webkit-file-upload-button {
+            background: linear-gradient(to bottom, #e05555, #aa2020);
+            color: #ffffff;
+            padding: 5px 12px;
+            margin-right: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            border-top: 1px solid #ff8888;
+            border-left: 1px solid #ff8888;
+            border-bottom: 2px solid #5a0000;
+            border-right: 2px solid #5a0000;
+            box-shadow: 1px 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+
         /* Floating Info Tag */
         .info-tag {
             position: absolute;
@@ -486,6 +534,7 @@
             border-bottom-right-radius: 8px;
         }
         .ass-wrap.floating .ass-resize { display: block; }
+        .ass-wrap.floating #btnApplyCode { width: calc(100% - 30px) !important; }
         .canvas-container.pure-preview .info-tag { display: none; }
     </style>
 </head>
@@ -532,13 +581,14 @@
                         <textarea id="assCodeInput" placeholder="在此粘贴或修改 ASS 矢量代码，例如：&#10;m 0 0 l 100 0 100 100 0 100 c m 200 200 l 300 200 300 300 c"></textarea>
                         <div class="row">
                             <label for="assPrecisionSelect" style="min-width: 40px;">精度:</label>
-                            <select id="assPrecisionSelect" title="p4 = 8 倍坐标精度">
+                            <select id="assPrecisionSelect" title="默认 = 原始 1x 无标签；p4 = 8 倍坐标精度">
+                                <option value="0" selected>默认</option>
                                 <option value="1">\p1 (1x)</option>
                                 <option value="2">\p2 (2x)</option>
                                 <option value="4">\p4 (8x)</option>
                             </select>
                         </div>
-                        <div class="geometry-hint">p2 / p4 代码自动附带 {\pN} 和 {\p0}；粘贴带标签的代码时会自动识别精度。</div>
+                        <div class="geometry-hint">「默认」输出原始 1x 代码且不带 {\p...} 标签；选 \p1 / \p2 / \p4 时按精度缩放坐标并自动附带 {\pN} 和 {\p0}；粘贴带标签的代码解析时会自动换算并同步精度。</div>
                         <div class="row">
                             <button class="btn" id="btnCopyCode" type="button" style="flex: 1; justify-content: center;">复制</button>
                             <button class="btn" id="btnDownloadCode" type="button" style="flex: 1; justify-content: center;">下载 TXT</button>
@@ -937,7 +987,7 @@
         let nodes = []; // List of PathNode
         let isClosed = true;
         let lastGeneratedAssCode = '';
-        let previousAssPrecision = '1';
+        let previousAssPrecision = '0';
 
         // Undo / Redo History Stack
         let undoStack = [];
@@ -1070,7 +1120,7 @@
         let showRulers = true;
 
         // ===== 第 12 项：Catmull-Rom 过点曲线状态 =====
-        // 采样点只存在这里，不进 nodes、不写撤销栈；点「完成」时才一次性转成 m/b 节点。
+        // 采样点只存在这里，不进 nodes、不写撤销栈；点“完成”时才一次性转成 m/b 节点。
         let catmullPoints = [];      // 世界坐标采样点（screenToWorld 已取整）
         let catmullTension = 0.5;    // 0.5 = 标准均匀 Catmull-Rom（控制柄系数 1/6）
         let catmullClosed = false;   // 首尾相连成环
@@ -1324,7 +1374,9 @@
         }
 
         // ASS drawing scale is 2^(\pN - 1): p2 = 2x, p4 = 8x (Aegisub specification).
+        // level 0 =「默认」：原始 1x 坐标，不附带任何 {\p...} 标签。
         function getAssDrawingScale(level = Number(document.getElementById('assPrecisionSelect').value)) {
+            if (level === 0) return 1;
             return 2 ** (level - 1);
         }
 
@@ -1344,7 +1396,8 @@
             }
             if (isClosed && nodes.length > 0) code += "c";
             const path = code.trim();
-            const output = (level === 1 || !path) ? path : `{\\p${level}}${path}{\\p0}`;
+            // 默认：不带标签；\p1 / \p2 / \p4：附带 {\pN} 与 {\p0}
+            const output = (level === 0 || !path) ? path : `{\\p${level}}${path}{\\p0}`;
             document.getElementById('assCodeInput').value = output;
             lastGeneratedAssCode = output;
             updateExportHeightEstimate();
