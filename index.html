@@ -277,7 +277,7 @@
             cursor: not-allowed;
         }
 
-        /* 描摹背景图「选择文件」：红色立体凸起；按钮右侧「未选择任何文件」提示固定为小号字（11px） */
+        /* 描摹背景图「选择文件」：红色立体凸起；按钮右侧「未选择任何文件」提示保持小号字 */
         #imgLoader { font-size: 11px; }
         #imgLoader::file-selector-button {
             background: linear-gradient(to bottom, #e05555, #aa2020);
@@ -2532,8 +2532,8 @@
             let worldStep = 50;
             if (scale > 3) worldStep = 10;
             else if (scale > 1.5) worldStep = 25;
-            else if (scale < 0.4) worldStep = 200;
             else if (scale < 0.2) worldStep = 500;
+            else if (scale < 0.4) worldStep = 200;
 
             // Render Top Ruler (X Axis)
             let startXWorld = Math.floor((-offsetX) / scale / worldStep) * worldStep;
@@ -3972,8 +3972,8 @@
             saveUndoState();
             for (let n of nodes) {
                 for (let p of n.points) {
-                    p.x = Math.round(p.x * sx);
-                    p.y = Math.round(p.y * sy);
+                    p.x = p.x * sx;
+                    p.y = p.y * sy;
                 }
             }
             updateCodeFromNodes(false);
