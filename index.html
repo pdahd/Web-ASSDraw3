@@ -440,6 +440,53 @@
         .panel-toggle:focus-visible { opacity: var(--panel-toggle-active-opacity); }
         .panel-toggle:hover { opacity: 1; background: linear-gradient(to right, #727272, #4d4d4d); }
         .panel-toggle:active { opacity: 1; background: linear-gradient(to right, #303030, #454545); }
+
+        /* Geometry tool styles are scoped to the new panel. */
+        .geometry-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .geometry-fields[hidden], .geometry-hint[hidden] { display: none; }
+        .geometry-pair label { min-width: 0; flex: 0 0 42px; }
+        .geometry-pair input[type="number"] { width: 0; min-width: 0; flex: 1; }
+        .geometry-hint { font-size: 11px; color: #aaa; line-height: 1.5; }
+
+        /* ASS 代码编辑器可从侧栏停靠区分离，标题栏移动、右下角调整尺寸。 */
+        .ass-wrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .ass-wrap textarea { flex: 1; }
+        .ass-wrap.floating {
+            position: fixed;
+            z-index: 1000;
+            background: linear-gradient(to bottom, #4a4a4a, #383838);
+            padding: 8px;
+            border-radius: 8px;
+            border-top: 1px solid #888;
+            border-left: 1px solid #888;
+            border-bottom: 2px solid #111;
+            border-right: 2px solid #111;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.7);
+            min-width: min(260px, calc(100vw - 8px));
+            min-height: min(300px, calc(100dvh - 8px));
+            overflow-y: auto;
+        }
+        .ass-wrap.floating .ass-header {
+            cursor: move;
+            touch-action: none;
+        }
+        .ass-wrap.floating textarea { height: auto; min-height: 70px; resize: none; }
+        .ass-resize {
+            display: none;
+            position: absolute;
+            right: 0; bottom: 0;
+            width: 22px; height: 22px;
+            cursor: nwse-resize;
+            touch-action: none;
+            background: linear-gradient(135deg, transparent 50%, #00ffcc 50%, #00ffcc 58%, transparent 58%, transparent 70%, #00ffcc 70%, #00ffcc 78%, transparent 78%);
+            border-bottom-right-radius: 8px;
+        }
+        .ass-wrap.floating .ass-resize { display: block; }
+        .canvas-container.pure-preview .info-tag { display: none; }
     </style>
 </head>
 <body>
@@ -454,6 +501,7 @@
             <button class="btn" id="toolStartM" title="开启新独立轮廓起点 (MoveTo m)">📍 起点 (m)</button>
             <button class="btn" id="toolLine" title="绘制直线 (L)">📏 直线 (l)</button>
             <button class="btn" id="toolBezier" title="绘制三阶贝塞尔曲线 (B)">➰ 贝塞尔 (b)</button>
+            <button class="btn" id="toolCatmull" title="过点曲线：逐点点按采样，曲线精确穿过每个点，完成后转为标准 b 曲线">✒️ 过点曲线</button>
             <button class="btn" id="toolPan" title="按住拖动画布视角 (Hand)">✋ 平移画布</button>
             <div style="width: 1px; height: 20px; background: #666; margin: 0 4px;"></div>
             <button class="btn" id="btnUndo" title="撤销操作 (Ctrl+Z)">↩️ 撤销</button>
@@ -474,14 +522,33 @@
 
         <div class="side-panel" id="sidePanel">
             <!-- ASS Code Group -->
-            <div class="panel-group">
-                <div class="panel-title">
-                    ASS 矢量代码 (DRAWING CODE)
-                    <button class="btn" id="btnCopyCode" style="padding: 2px 6px; font-size: 11px;">复制</button>
-                </div>
-                <textarea id="assCodeInput" placeholder="在此粘贴或修改 ASS 矢量代码，例如：&#10;m 0 0 l 100 0 100 100 0 100 c m 200 200 l 300 200 300 300 c"></textarea>
-                <div class="row">
-                    <button class="btn" id="btnApplyCode" style="width: 100%; justify-content: center;">解析代码至画布 ➔</button>
+            <div class="panel-group" id="assCodeGroup">
+                <div id="assDock">
+                    <div class="ass-wrap" id="assWrap">
+                        <div class="panel-title ass-header" id="assHeader">
+                            ASS 矢量代码 (DRAWING CODE)
+                            <button class="btn" id="btnAssFloat" type="button" title="悬浮 / 停靠代码编辑器" style="padding: 2px 6px; font-size: 11px;">悬浮</button>
+                        </div>
+                        <textarea id="assCodeInput" placeholder="在此粘贴或修改 ASS 矢量代码，例如：&#10;m 0 0 l 100 0 100 100 0 100 c m 200 200 l 300 200 300 300 c"></textarea>
+                        <div class="row">
+                            <label for="assPrecisionSelect" style="min-width: 40px;">精度:</label>
+                            <select id="assPrecisionSelect" title="p4 = 8 倍坐标精度">
+                                <option value="1">\p1 (1x)</option>
+                                <option value="2">\p2 (2x)</option>
+                                <option value="4">\p4 (8x)</option>
+                            </select>
+                        </div>
+                        <div class="geometry-hint">p2 / p4 代码自动附带 {\pN} 和 {\p0}；粘贴带标签的代码时会自动识别精度。</div>
+                        <div class="row">
+                            <button class="btn" id="btnCopyCode" type="button" style="flex: 1; justify-content: center;">复制</button>
+                            <button class="btn" id="btnDownloadCode" type="button" style="flex: 1; justify-content: center;">下载 TXT</button>
+                            <button class="btn" id="btnClearCode" type="button" style="flex: 1; justify-content: center;">清空输入</button>
+                        </div>
+                        <div class="row">
+                            <button class="btn" id="btnApplyCode" style="width: 100%; justify-content: center;">解析代码至画布 ➔</button>
+                        </div>
+                        <div class="ass-resize" id="assResize"></div>
+                    </div>
                 </div>
             </div>
 
@@ -526,6 +593,121 @@
                 </div>
             </div>
 
+            <!-- Circle / Rounded Rectangle / Circular Arc Tools -->
+            <div class="panel-group" id="geometryGroup">
+                <div class="panel-title">几何图形工具 (SHAPES)</div>
+                <div class="row">
+                    <label for="geometryType">图形:</label>
+                    <select id="geometryType" aria-describedby="geometryHelp">
+                        <option value="circle">圆</option>
+                        <option value="rounded_rect">圆角矩形</option>
+                        <option value="arc">圆弧</option>
+                    </select>
+                </div>
+                <div class="geometry-fields" id="geometryRadialFields">
+                    <div class="row geometry-pair">
+                        <label for="geometryCX">中心X:</label>
+                        <input type="number" id="geometryCX" value="0" step="any">
+                        <label for="geometryCY">中心Y:</label>
+                        <input type="number" id="geometryCY" value="0" step="any">
+                    </div>
+                    <div class="row">
+                        <label for="geometryRadius">半径:</label>
+                        <input type="number" id="geometryRadius" value="80" min="0" step="any">
+                    </div>
+                </div>
+                <div class="geometry-fields" id="geometryRectFields" hidden>
+                    <div class="row geometry-pair">
+                        <label for="geometryRectX">左上X:</label>
+                        <input type="number" id="geometryRectX" value="-100" step="any">
+                        <label for="geometryRectY">左上Y:</label>
+                        <input type="number" id="geometryRectY" value="-60" step="any">
+                    </div>
+                    <div class="row geometry-pair">
+                        <label for="geometryWidth">宽度:</label>
+                        <input type="number" id="geometryWidth" value="200" min="0" step="any">
+                        <label for="geometryHeight">高度:</label>
+                        <input type="number" id="geometryHeight" value="120" min="0" step="any">
+                    </div>
+                    <div class="row">
+                        <label for="geometryCorner">圆角半径:</label>
+                        <input type="number" id="geometryCorner" value="20" min="0" step="any">
+                    </div>
+                    <div class="geometry-hint">圆角半径为 0 时生成直角矩形，超过短边的一半时自动限制。</div>
+                </div>
+                <div class="geometry-fields" id="geometryArcFields" hidden>
+                    <div class="row">
+                        <label for="geometryStart">起始角度:</label>
+                        <input type="number" id="geometryStart" value="0" step="any">
+                    </div>
+                    <div class="row">
+                        <label for="geometrySweep">扫过角度:</label>
+                        <input type="number" id="geometrySweep" value="180" min="-360" max="360" step="any">
+                    </div>
+                    <div class="geometry-hint">单位为度，0 度向右；正扫角顺时针，负扫角逆时针。扫角不能为 0。</div>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnGeometryCenter" type="button" style="flex: 1; justify-content: center;">对准视图中心</button>
+                    <button class="btn" id="btnAddGeometry" type="button" style="flex: 1; justify-content: center;">添加图形</button>
+                </div>
+                <div class="geometry-hint" id="geometryHelp">尺寸为 ASS 坐标单位；每次追加一个独立轮廓。曲线内部保留小数，ASS 文本沿用整数输出。</div>
+                <div class="geometry-hint" id="geometryArcHint" hidden>开放圆弧预览：取消勾选“自动闭合曲线”，并将填充透明度设为 0。PNG 仍沿用只填充、不描边的导出规则。</div>
+            </div>
+
+            <!-- Catmull-Rom Through-Point Curve (第 12 项) -->
+            <div class="panel-group" id="catmullGroup">
+                <div class="panel-title">过点曲线 (CATMULL-ROM)</div>
+                <div class="geometry-hint">先在工具栏选「✒️ 过点曲线」，再在画布上逐点点按采样。曲线会精确穿过每一个采样点，点「完成」后按均匀 Catmull-Rom 公式精确转成标准 <code>b</code> 曲线，比 B 样条更适合触屏描摹。</div>
+                <div class="tp-info" id="catmullInfo">采样点: 0</div>
+                <div class="row">
+                    <label style="min-width: 50px;">张力:</label>
+                    <input type="range" id="catmullTension" min="0" max="1" step="0.05" value="0.5">
+                    <span id="catmullTensionText" style="font-size: 11px; color: #aaa; min-width: 34px;">0.50</span>
+                </div>
+                <div class="row">
+                    <label style="min-width: auto;"><input type="checkbox" id="chkCatmullClosed" style="width: auto;"> 首尾相连（环形，至少 3 点）</label>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnCatmullUndoPt" type="button" style="flex: 1; justify-content: center;">↶ 退一点</button>
+                    <button class="btn" id="btnCatmullCancel" type="button" style="flex: 1; justify-content: center;">✕ 取消</button>
+                    <button class="btn" id="btnCatmullFinish" type="button" style="flex: 1; justify-content: center; background: linear-gradient(to bottom, #00aa66, #007744);">✅ 完成</button>
+                </div>
+                <div class="geometry-hint">张力 0.50 为标准 Catmull-Rom（控制柄系数 1/6）；调小更平直，调大更外扩。采样期间按 Enter 亦可完成。</div>
+            </div>
+
+            <!-- Bezier Handle Smooth / Symmetric Linkage (第 13 项) -->
+            <div class="panel-group" id="handleGroup">
+                <div class="panel-title">控制柄联动 (HANDLES)</div>
+                <div class="row">
+                    <label for="handleModeSelect">联动模式:</label>
+                    <select id="handleModeSelect">
+                        <option value="free">自由（默认）</option>
+                        <option value="smooth">平滑（共线，各自保留长度）</option>
+                        <option value="symmetric">对称（共线且等长）</option>
+                    </select>
+                </div>
+                <div class="row">
+                    <button class="btn" id="btnSmoothAnchor" type="button" style="width: 100%; justify-content: center;">🔗 按当前模式整理选中锚点</button>
+                </div>
+                <div class="geometry-hint">数据按「段」存储：一个锚点的入柄在本段 <code>b</code> 的第 2 个点，出柄在下一段 <code>b</code> 的第 1 个点，因此联动是跨节点进行的，闭合轮廓会自动绕回首尾段。非「自由」模式下，拖动控制柄会联动对侧柄；拖动锚点时两侧控制柄（以及闭合轮廓里与起点重合的末端点）一并平移。</div>
+            </div>
+
+            <!-- Selected segment is identified by its end anchor, not by two selected points. -->
+            <div class="panel-group" id="segmentGroup">
+                <div class="panel-title">线段类型转换 (SEGMENT)</div>
+                <div class="geometry-hint">选中线段的终点（直线唯一节点或曲线末端白点）；当前段会高亮。选中轮廓起点可处理该轮廓的闭合边。</div>
+                <div class="tp-info" id="segmentInfo">未选中线段</div>
+                <button class="btn" id="btnConvertSegment" type="button" style="justify-content: center;">将选中线段转为直线 / 曲线</button>
+            </div>
+
+            <!-- Pivot is locked to the selected point and its own contour. -->
+            <div class="panel-group" id="rotateGroup">
+                <div class="panel-title">围绕节点旋转 (ROTATE)</div>
+                <div class="geometry-hint">先选中红色节点，再启用旋转。图形锁定后，在转轴周围空白处按住并绕圈拖动；只转动该节点所属轮廓。中键仍可平移，双指仍可缩放。</div>
+                <div class="tp-info" id="rotateInfo">先选中图形上的一个节点</div>
+                <button class="btn" id="btnRotateMode" type="button" aria-pressed="false" style="justify-content: center;">启用旋转</button>
+            </div>
+
             <!-- Drawing Style & Display Options -->
             <div class="panel-group">
                 <div class="panel-title">样式与显示设置 (STYLE & DISPLAY)</div>
@@ -542,11 +724,14 @@
                     <input type="range" id="strokeWidth" min="1" max="10" value="2">
                 </div>
                 <div class="row">
+                    <label style="min-width: auto;"><input type="checkbox" id="chkPurePreview"> 纯图形预览（仅显示填充；画布可平移/缩放）</label>
+                </div>
+                <div class="row">
                     <label><input type="checkbox" id="chkShowGuides" checked> 显示平行/垂直橙色对齐线</label>
                     <input type="color" id="guideColor" value="#ff9900" title="对齐辅助线颜色">
                 </div>
                 <div class="row">
-                    <label><input type="checkbox" id="chkShowBBox"> 显示原版外框包围盒与中心十字</label>
+                    <label><input type="checkbox" id="chkShowBBox"> 显示外框包围盒与中心十字</label>
                 </div>
                 <div class="row">
                     <label><input type="checkbox" id="chkShowAxes"> 显示中心坐标轴</label>
@@ -572,7 +757,7 @@
 
             <!-- Tracing Background Image -->
             <div class="panel-group">
-                <div class="panel-title">背景描摹图片 (TRACING IMAGE)</div>
+                <div class="panel-title">描摹背景图片 (TRACING IMAGE)</div>
                 <div class="row">
                     <input type="file" id="imgLoader" accept="image/*">
                 </div>
@@ -629,7 +814,7 @@
             <div class="panel-group">
                 <div class="panel-title">图形变换与微移 (TRANSFORM & SHIFT)</div>
                 <div class="row">
-                    <button class="btn" id="btnReverseContourSide" style="flex: 1; justify-content: center; background: linear-gradient(to bottom, #d97706, #b45309);">🔄 颠倒轮廓方向(挖空)</button>
+                    <button class="btn" id="btnReverseContourSide" style="flex: 1; justify-content: center; background: linear-gradient(to bottom, #d97706, #b45309);">🔄 颠倒轮廓方向(挖空/实心)</button>
                 </div>
                 <div class="row">
                     <button class="btn" id="btnScaleUp" style="flex: 1; justify-content: center;">放大 1.2x</button>
@@ -751,6 +936,8 @@
 
         let nodes = []; // List of PathNode
         let isClosed = true;
+        let lastGeneratedAssCode = '';
+        let previousAssPrecision = '1';
 
         // Undo / Redo History Stack
         let undoStack = [];
@@ -834,7 +1021,7 @@
         let offsetX = 0;
         let offsetY = 0;
 
-        // Mode: 'move', 'move_contour', 'start_m', 'line', 'bezier', 'pan'
+        // Mode: 'move', 'move_contour', 'start_m', 'line', 'bezier', 'catmull', 'pan'
         let currentMode = 'move';
         let isDragging = false;
         let selectedNodeIdx = -1;
@@ -842,6 +1029,9 @@
         let selectedContourIdx = -1;
         let lastDragMousePt = { x: 0, y: 0 };
         let snappedNodePos = null;
+        let purePreviewMode = false;
+        let rotateLock = null;
+        let rotateLastDegrees = 0;
 
         // 拖动轮廓时尚未凑满 1 个世界单位的“未取整位移”累加器。
         // 以前每次移动都 Math.round(屏幕位移 / scale)，缩放 300% 时屏幕上动 1px 只对应 0.33 个世界单位，
@@ -878,6 +1068,16 @@
         let showAxes = false;
         let axesColor = '#0088ff';
         let showRulers = true;
+
+        // ===== 第 12 项：Catmull-Rom 过点曲线状态 =====
+        // 采样点只存在这里，不进 nodes、不写撤销栈；点「完成」时才一次性转成 m/b 节点。
+        let catmullPoints = [];      // 世界坐标采样点（screenToWorld 已取整）
+        let catmullTension = 0.5;    // 0.5 = 标准均匀 Catmull-Rom（控制柄系数 1/6）
+        let catmullClosed = false;   // 首尾相连成环
+
+        // ===== 第 13 项：控制柄联动模式 =====
+        // 'free' = 基线原行为；'smooth' = 共线保留各自长度；'symmetric' = 共线且等长
+        let handleLinkMode = 'free';
 
         // === HiDPI (Retina) Support ===
         // viewW / viewH 是画布的 CSS 逻辑尺寸（所有绘图坐标都基于它），
@@ -1123,20 +1323,30 @@
             render();
         }
 
+        // ASS drawing scale is 2^(\pN - 1): p2 = 2x, p4 = 8x (Aegisub specification).
+        function getAssDrawingScale(level = Number(document.getElementById('assPrecisionSelect').value)) {
+            return 2 ** (level - 1);
+        }
+
         // Generate ASS Code Text from Nodes array
         function updateCodeFromNodes(addHistory = true) {
             if (addHistory) saveUndoState();
             // 节点坐标已变化，重合查找表失效（下次查询时按新坐标重建）
             overlapTable = null;
+            const level = Number(document.getElementById('assPrecisionSelect').value);
+            const factor = getAssDrawingScale(level);
             let code = "";
             for (let n of nodes) {
                 code += n.type + " ";
                 for (let p of n.points) {
-                    code += Math.round(p.x) + " " + Math.round(p.y) + " ";
+                    code += Math.round(p.x * factor) + " " + Math.round(p.y * factor) + " ";
                 }
             }
             if (isClosed && nodes.length > 0) code += "c";
-            document.getElementById('assCodeInput').value = code.trim();
+            const path = code.trim();
+            const output = (level === 1 || !path) ? path : `{\\p${level}}${path}{\\p0}`;
+            document.getElementById('assCodeInput').value = output;
+            lastGeneratedAssCode = output;
             updateExportHeightEstimate();
             updateInfoTag();
         }
@@ -1155,6 +1365,20 @@
         //  - n：不闭合的移动。图形进行中（m 之后已画出线段）时它既不闭合也不另起轮廓，对形状没有影响；
         //        图形尚未开始时作用等同于 m。
         function parseAssCode(codeStr) {
+            // Tagged code overrides the selector; bare drawing code uses its current level.
+            let taggedLevel = null, unsupported = false;
+            const drawingCode = codeStr.replace(/\{[^{}]*\\p(\d+)[^{}]*\}/gi, (tag, number) => {
+                const value = Number(number);
+                if (value && (![1, 2, 4].includes(value) || (taggedLevel && taggedLevel !== value))) unsupported = true;
+                else if (value) taggedLevel = value;
+                return ' ';
+            });
+            if (unsupported) {
+                alert('本编辑器一次只支持一种绘图精度：\\p1、\\p2 或 \\p4；画布未改动。');
+                return;
+            }
+            const importLevel = taggedLevel || Number(document.getElementById('assPrecisionSelect').value);
+            const importFactor = getAssDrawingScale(importLevel);
             saveUndoState();
             nodes = [];
             // 节点数组已整体替换，旧的选中序号全部失效，必须重置
@@ -1162,8 +1386,10 @@
             selectedPtIdx = -1;
             selectedContourIdx = -1;
             snappedNodePos = null;
+            // 第 12 项：整条路径被替换，未完成的过点曲线采样一并作废
+            catmullPoints = [];
 
-            const tokens = codeStr.trim().split(/\s+/).filter(t => t !== '');
+            const tokens = drawingCode.trim().split(/\s+/).filter(t => t !== '');
             const COMMANDS = ['m', 'n', 'l', 'b', 's', 'p', 'c'];
             const isNumToken = t => /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/i.test(t);
 
@@ -1316,6 +1542,21 @@
                 i++;
             }
 
+            if (importFactor !== 1) {
+                for (const n of nodes) {
+                    for (const p of n.points) {
+                        p.x /= importFactor;
+                        p.y /= importFactor;
+                    }
+                }
+            }
+            if (taggedLevel) {
+                document.getElementById('assPrecisionSelect').value = String(taggedLevel);
+                previousAssPrecision = String(taggedLevel);
+            }
+            // The text may be user-edited; do not treat it as generated on a later precision switch.
+            lastGeneratedAssCode = null;
+
             // 闭合状态以代码为准：出现过 c 即闭合，否则不闭合，并同步勾选框
             // （解析出的节点为空时保持原状态，避免清空代码后勾选框被意外取消）
             if (nodes.length > 0) {
@@ -1397,23 +1638,33 @@
                 }
             };
 
-            let cur = null; // 当前画笔位置
+            // Isolated m nodes are not drawn; only include endpoints of real segments.
+            let cur = null, hasSegment = false;
             for (const n of nodes) {
                 if (!n.points || n.points.length === 0) continue;
-                if (n.type === 'm' || n.type === 'l') {
+                if (n.type === 'm') {
+                    cur = n.points[0];
+                } else if (n.type === 'l') {
                     const p = n.points[0];
-                    addX(p.x); addY(p.y);
+                    if (cur) {
+                        addX(cur.x); addY(cur.y);
+                        addX(p.x); addY(p.y);
+                        hasSegment = true;
+                    }
                     cur = p;
                 } else if (n.type === 'b') {
                     const p0 = cur || n.points[0];
                     const c1 = n.points[0], c2 = n.points[1], p3 = n.points[2];
-                    addAxisExtrema(p0.x, c1.x, c2.x, p3.x, addX);
-                    addAxisExtrema(p0.y, c1.y, c2.y, p3.y, addY);
+                    if (cur) {
+                        addAxisExtrema(p0.x, c1.x, c2.x, p3.x, addX);
+                        addAxisExtrema(p0.y, c1.y, c2.y, p3.y, addY);
+                        hasSegment = true;
+                    }
                     cur = p3;
                 }
             }
 
-            if (minX === Infinity || minY === Infinity) return null;
+            if (!hasSegment) return null;
             return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
         }
 
@@ -1474,6 +1725,443 @@
             } else {
                 document.getElementById('expHeight').value = "自动计算";
             }
+        }
+
+        // ===================================================================
+        // 第 12 项：Catmull-Rom 过点曲线（笔尖点哪，曲线就过哪）
+        // ===================================================================
+        // 均匀 Catmull-Rom 样条可以逐段精确转换成三阶贝塞尔（不是近似）：
+        //   给定相邻四个采样点 P0 P1 P2 P3，P1→P2 这一段的贝塞尔控制点为
+        //     C1 = P1 + (P2 - P0) · τ / 3
+        //     C2 = P2 - (P3 - P1) · τ / 3
+        //   其中 τ = 0.5 即标准均匀 Catmull-Rom（系数 1/6）。
+        // 曲线严格经过 P1 与 P2，因此「点哪过哪」，比 B 样条更适合触屏描摹。
+        // 开放曲线的两端复制端点（P0 = P1、P3 = P2）；环形则按模 n 回绕。
+        function buildCatmullNodes(pts, closed, tau) {
+            if (!pts || pts.length < 2) return null;
+            const n = pts.length;
+            const ring = !!closed && n >= 3;
+            const at = (k) => {
+                if (ring) return pts[((k % n) + n) % n];
+                return pts[Math.max(0, Math.min(n - 1, k))];
+            };
+            const R = v => Math.round(v);
+            const out = [new PathNode('m', [{ x: R(pts[0].x), y: R(pts[0].y) }])];
+            const segCount = ring ? n : n - 1;
+            for (let i = 0; i < segCount; i++) {
+                const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+                out.push(new PathNode('b', [
+                    { x: R(p1.x + (p2.x - p0.x) * tau / 3), y: R(p1.y + (p2.y - p0.y) * tau / 3) },
+                    { x: R(p2.x - (p3.x - p1.x) * tau / 3), y: R(p2.y - (p3.y - p1.y) * tau / 3) },
+                    { x: R(p2.x), y: R(p2.y) }
+                ]));
+            }
+            return out;
+        }
+
+        function updateCatmullInfo() {
+            const el = document.getElementById('catmullInfo');
+            if (!el) return;
+            const n = catmullPoints.length;
+            if (n === 0) {
+                el.innerText = '采样点: 0 —— 选「✒️ 过点曲线」后在画布上逐点点按';
+            } else if (n < 2) {
+                el.innerText = '采样点: 1 —— 至少需要 2 个点才能生成曲线';
+            } else {
+                const segs = (catmullClosed && n >= 3) ? n : n - 1;
+                el.innerText = `采样点: ${n}　曲线段: ${segs}　张力: ${catmullTension.toFixed(2)}` +
+                               ((catmullClosed && n >= 3) ? '　[环形]' : '');
+            }
+        }
+
+        // 画布上的采样预览：独立于 nodes，不写入撤销栈
+        function drawCatmullPreview() {
+            const built = buildCatmullNodes(catmullPoints, catmullClosed, catmullTension);
+            ctx.save();
+            if (built) {
+                ctx.beginPath();
+                for (const n of built) {
+                    if (n.type === 'm') {
+                        const p = worldToScreen(n.points[0].x, n.points[0].y);
+                        ctx.moveTo(p.x, p.y);
+                    } else if (n.type === 'b') {
+                        const p1 = worldToScreen(n.points[0].x, n.points[0].y);
+                        const p2 = worldToScreen(n.points[1].x, n.points[1].y);
+                        const p3 = worldToScreen(n.points[2].x, n.points[2].y);
+                        ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+                    }
+                }
+                ctx.strokeStyle = '#ff9f1c';
+                ctx.lineWidth = Math.max(1.5, strokeWidth);
+                ctx.globalAlpha = 0.95;
+                ctx.setLineDash([7, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            for (let i = 0; i < catmullPoints.length; i++) {
+                const s = worldToScreen(catmullPoints[i].x, catmullPoints[i].y);
+                ctx.globalAlpha = 1;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = (i === 0) ? '#ff3366' : '#ffd166';
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // 完成：把采样点一次性转成标准 m/b 节点（只记录一次撤销）
+        function commitCatmullCurve() {
+            const built = buildCatmullNodes(catmullPoints, catmullClosed, catmullTension);
+            if (!built) {
+                alert('至少需要 2 个采样点才能生成过点曲线。');
+                return;
+            }
+            saveUndoState();
+            nodes.push(...built);
+            catmullPoints = [];
+            selectedNodeIdx = -1;
+            selectedPtIdx = -1;
+            selectedContourIdx = -1;
+            snappedNodePos = null;
+            updateCatmullInfo();
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        function cancelCatmullCurve() {
+            if (catmullPoints.length === 0) return;
+            catmullPoints = [];
+            updateCatmullInfo();
+            render();
+        }
+
+        function popCatmullPoint() {
+            if (catmullPoints.length === 0) return;
+            catmullPoints.pop();
+            updateCatmullInfo();
+            render();
+        }
+
+        // ===================================================================
+        // 第 13 项：控制柄平滑 / 对称联动（跨节点）
+        // ===================================================================
+        // 数据是按「段」存的：节点 b 的 points = [出柄(属于上一个锚点), 入柄(属于本段终点), 终点]。
+        // 也就是说，同一个锚点的入柄在本段里、出柄在下一段里，必须跨节点配对才能联动。
+        // 闭合轮廓（首个 m 点与末段终点重合）还要绕回首尾段。
+        function findContourRange(nodeIdx) {
+            if (nodeIdx < 0 || nodeIdx >= nodes.length) return null;
+            let start = nodeIdx;
+            while (start > 0 && nodes[start].type !== 'm') start--;
+            let end = nodeIdx;
+            while (end + 1 < nodes.length && nodes[end + 1].type !== 'm') end++;
+            return { start: start, end: end };
+        }
+
+        function nodeEndPoint(i) {
+            const pts = nodes[i].points;
+            return pts[pts.length - 1];
+        }
+
+        function samePointRounded(a, b) {
+            return Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y);
+        }
+
+        // 轮廓是否首尾重合（几何意义上的环）
+        function isRingContour(range) {
+            if (!range || range.end <= range.start) return false;
+            return samePointRounded(nodes[range.start].points[0], nodeEndPoint(range.end));
+        }
+
+        // 控制柄 (i, j) → { anchor: 它依附的锚点坐标, partner: 对侧控制柄的 {nodeIdx, ptIdx} }
+        function getHandleRelation(i, j) {
+            const n = nodes[i];
+            if (!n || n.type !== 'b' || (j !== 0 && j !== 1)) return null;
+            const range = findContourRange(i);
+            if (!range) return null;
+            const ring = isRingContour(range);
+
+            if (j === 1) {
+                // 入柄：锚点是本段终点，对侧是「下一段的出柄」
+                let nextIdx = -1;
+                if (i < range.end) nextIdx = i + 1;
+                else if (ring && range.start + 1 <= range.end) nextIdx = range.start + 1;
+                let partner = null;
+                if (nextIdx >= 0 && nextIdx !== i && nodes[nextIdx] && nodes[nextIdx].type === 'b') {
+                    partner = { nodeIdx: nextIdx, ptIdx: 0 };
+                }
+                return { anchor: n.points[2], partner: partner };
+            }
+
+            // 出柄：锚点是上一段的终点，对侧是「上一段的入柄」
+            let prevIdx = -1;
+            if (i > range.start) prevIdx = i - 1;
+            else if (ring) prevIdx = range.end;
+            if (prevIdx < 0 || prevIdx === i) return null;
+            const prev = nodes[prevIdx];
+            let partner = null;
+            if (prev.type === 'b') {
+                partner = { nodeIdx: prevIdx, ptIdx: 1 };
+            } else if (prev.type === 'm' && ring && range.end !== i && nodes[range.end] && nodes[range.end].type === 'b') {
+                // 环形轮廓的起点 m：它的入柄藏在最后一段里
+                partner = { nodeIdx: range.end, ptIdx: 1 };
+            }
+            return { anchor: nodeEndPoint(prevIdx), partner: partner };
+        }
+
+        // 锚点（节点 i 的终点）两侧的控制柄引用
+        function getAnchorHandles(i) {
+            const range = findContourRange(i);
+            if (!range) return [];
+            const ring = isRingContour(range);
+            const res = [];
+            if (nodes[i].type === 'b') {
+                res.push({ nodeIdx: i, ptIdx: 1 });
+            } else if (ring && i === range.start && nodes[range.end] && nodes[range.end].type === 'b') {
+                res.push({ nodeIdx: range.end, ptIdx: 1 });
+            }
+            let nextIdx = -1;
+            if (i < range.end) nextIdx = i + 1;
+            else if (ring && range.start + 1 <= range.end) nextIdx = range.start + 1;
+            if (nextIdx >= 0 && nextIdx !== i && nodes[nextIdx] && nodes[nextIdx].type === 'b') {
+                res.push({ nodeIdx: nextIdx, ptIdx: 0 });
+            }
+            return res;
+        }
+
+        // 闭合轮廓里与锚点重合的「孪生点」（起点 m ↔ 末段终点），移动时必须一起走
+        function getRingTwin(i, j) {
+            const range = findContourRange(i);
+            if (!range || !isRingContour(range)) return null;
+            if (j !== nodes[i].points.length - 1) return null;
+            if (i === range.start) {
+                const lastPts = nodes[range.end].points;
+                return { nodeIdx: range.end, ptIdx: lastPts.length - 1 };
+            }
+            if (i === range.end) return { nodeIdx: range.start, ptIdx: 0 };
+            return null;
+        }
+
+        // 某个点刚被移动后调用：按当前联动模式处理对侧控制柄 / 跟随锚点
+        function applyHandleLink(i, j, prevPos) {
+            if (handleLinkMode === 'free') return;
+            const n = nodes[i];
+            if (!n || !n.points[j]) return;
+
+            // (1) 移动的是控制柄 → 把对侧控制柄镜像到锚点另一侧
+            if (n.type === 'b' && (j === 0 || j === 1)) {
+                const rel = getHandleRelation(i, j);
+                if (!rel || !rel.partner) return;
+                const a = rel.anchor;
+                const h = n.points[j];
+                const dx = h.x - a.x, dy = h.y - a.y;
+                const len = Math.hypot(dx, dy);
+                if (len < 1e-6) return; // 柄与锚点重合，没有方向可言
+                const pRef = nodes[rel.partner.nodeIdx].points[rel.partner.ptIdx];
+                let targetLen;
+                if (handleLinkMode === 'symmetric') {
+                    targetLen = len;
+                } else {
+                    targetLen = Math.hypot(pRef.x - a.x, pRef.y - a.y);
+                    if (targetLen < 1e-6) return; // 平滑模式下对侧柄长度为 0，保持原样
+                }
+                nodes[rel.partner.nodeIdx].points[rel.partner.ptIdx] = {
+                    x: Math.round(a.x - dx / len * targetLen),
+                    y: Math.round(a.y - dy / len * targetLen)
+                };
+                return;
+            }
+
+            // (2) 移动的是锚点 → 两侧控制柄与环形孪生点按同样位移跟随
+            if (j !== n.points.length - 1 || !prevPos) return;
+            const cur = n.points[j];
+            const dx = cur.x - prevPos.x, dy = cur.y - prevPos.y;
+            if (dx === 0 && dy === 0) return;
+            const twin = getRingTwin(i, j);
+            for (const h of getAnchorHandles(i)) {
+                const pt = nodes[h.nodeIdx].points[h.ptIdx];
+                nodes[h.nodeIdx].points[h.ptIdx] = { x: Math.round(pt.x + dx), y: Math.round(pt.y + dy) };
+            }
+            if (twin) {
+                const tp = nodes[twin.nodeIdx].points[twin.ptIdx];
+                nodes[twin.nodeIdx].points[twin.ptIdx] = { x: Math.round(tp.x + dx), y: Math.round(tp.y + dy) };
+            }
+        }
+
+        // 选中的点属于哪个锚点（控制柄 → 它依附的锚点所在节点）
+        function anchorNodeIndexOf(i, j) {
+            const n = nodes[i];
+            if (!n) return -1;
+            if (j === n.points.length - 1) return i;
+            if (n.type === 'b' && j === 1) return i;
+            if (n.type === 'b' && j === 0) {
+                const range = findContourRange(i);
+                if (!range) return -1;
+                if (i > range.start) return i - 1;
+                if (isRingContour(range)) return range.end;
+                return -1;
+            }
+            return -1;
+        }
+
+        // 一次性整理：让锚点两侧控制柄共线（symmetric 时再取平均长度等长）
+        function smoothAnchorNode(anchorIdx, symmetric) {
+            const handles = getAnchorHandles(anchorIdx);
+            const inH = handles.find(h => h.ptIdx === 1);
+            const outH = handles.find(h => h.ptIdx === 0);
+            if (!inH || !outH) return false;
+            const a = nodeEndPoint(anchorIdx);
+            const pIn = nodes[inH.nodeIdx].points[1];
+            const pOut = nodes[outH.nodeIdx].points[0];
+            let tx = pOut.x - pIn.x, ty = pOut.y - pIn.y;
+            const tl = Math.hypot(tx, ty);
+            if (tl < 1e-6) return false;
+            tx /= tl; ty /= tl;
+            let lIn = Math.hypot(pIn.x - a.x, pIn.y - a.y);
+            let lOut = Math.hypot(pOut.x - a.x, pOut.y - a.y);
+            if (symmetric) {
+                const avg = (lIn + lOut) / 2;
+                lIn = avg; lOut = avg;
+            }
+            nodes[inH.nodeIdx].points[1] = { x: Math.round(a.x - tx * lIn), y: Math.round(a.y - ty * lIn) };
+            nodes[outH.nodeIdx].points[0] = { x: Math.round(a.x + tx * lOut), y: Math.round(a.y + ty * lOut) };
+            return true;
+        }
+
+        // Selecting an end anchor identifies its incoming segment. Selecting m identifies
+        // its implicit closing edge; if a real final node already ends at m, use that segment.
+        function getSelectedSegment() {
+            if (!hasValidSelection()) return null;
+            const i = selectedNodeIdx, n = nodes[i];
+            if (selectedPtIdx !== n.points.length - 1) return null;
+            if (n.type === 'l' || n.type === 'b') {
+                return i > 0 && nodes[i - 1] ? { kind: 'node', index: i, start: nodeEndPoint(i - 1), end: nodeEndPoint(i) } : null;
+            }
+            if (n.type !== 'm') return null;
+            const range = findContourRange(i);
+            if (!range || range.start !== i || range.end <= i) return null;
+            const lastIdx = range.end, last = nodes[lastIdx];
+            if (last.type !== 'l' && last.type !== 'b') return null;
+            const start = nodeEndPoint(lastIdx), end = n.points[0];
+            if (samePointRounded(start, end)) {
+                return { kind: 'node', index: lastIdx, start: nodeEndPoint(lastIdx - 1), end: start };
+            }
+            return isClosed ? { kind: 'closure', index: lastIdx + 1, start: start, end: end } : null;
+        }
+
+        function updateSegmentInfo() {
+            const el = document.getElementById('segmentInfo');
+            if (!el) return;
+            const seg = getSelectedSegment();
+            if (seg) {
+                el.innerText = seg.kind === 'closure'
+                    ? '选中自动闭合直线；转换后生成显式曲线段'
+                    : `已选中第 ${seg.index + 1} 个节点的${nodes[seg.index].type === 'l' ? '直线' : '曲线'}段`;
+            } else {
+                el.innerText = hasValidSelection() ? '请选中线段末端锚点（控制柄不是线段）' : '未选中线段';
+            }
+        }
+
+        function convertSegmentAtSelection() {
+            const seg = getSelectedSegment();
+            if (!seg) {
+                alert('请用「选择或拖动节点」点选目标线段的末端锚点；自动闭合边请选轮廓起点。');
+                return;
+            }
+            saveUndoState();
+            if (seg.kind === 'closure' || nodes[seg.index].type === 'l') {
+                // The cubic with controls at one and two thirds is exactly the original line.
+                const a = seg.start, b = seg.end;
+                const curve = new PathNode('b', [
+                    { x: a.x + (b.x - a.x) / 3, y: a.y + (b.y - a.y) / 3 },
+                    { x: a.x + (b.x - a.x) * 2 / 3, y: a.y + (b.y - a.y) * 2 / 3 },
+                    { x: b.x, y: b.y }
+                ]);
+                if (seg.kind === 'closure') nodes.splice(seg.index, 0, curve);
+                else nodes[seg.index] = curve;
+                selectedNodeIdx = seg.index;
+                selectedPtIdx = 2;
+            } else {
+                const b = seg.end;
+                nodes[seg.index] = new PathNode('l', [{ x: b.x, y: b.y }]);
+                selectedNodeIdx = seg.index;
+                selectedPtIdx = 0;
+            }
+            selectedContourIdx = -1;
+            updateCodeFromNodes(false);
+            render();
+        }
+
+        function renderSelectedSegment() {
+            const seg = getSelectedSegment();
+            if (!seg) return;
+            const a = worldToScreen(seg.start.x, seg.start.y);
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            if (seg.kind === 'node' && nodes[seg.index].type === 'b') {
+                const [c1, c2, end] = nodes[seg.index].points;
+                const p1 = worldToScreen(c1.x, c1.y), p2 = worldToScreen(c2.x, c2.y), p3 = worldToScreen(end.x, end.y);
+                ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+            } else {
+                const b = worldToScreen(seg.end.x, seg.end.y);
+                ctx.lineTo(b.x, b.y);
+            }
+            ctx.strokeStyle = '#ffb84d';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.75;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Rotation uses a locked point and contour, not the active toolbar mode. Recompute
+        // each preview frame from the original points to avoid cumulative rounding drift.
+        function rotateLockValid() {
+            if (!rotateLock || nodes !== rotateLock.nodeList) return false;
+            if (nodes[rotateLock.selectedIdx] !== rotateLock.selectedNode) return false;
+            const pivot = nodes[rotateLock.selectedIdx].points[rotateLock.selectedPt];
+            if (!pivot || pivot.x !== rotateLock.pivot.x || pivot.y !== rotateLock.pivot.y) return false;
+            return rotateLock.indices.every((idx, k) => nodes[idx] === rotateLock.refs[k]);
+        }
+
+        function updateRotateInfo() {
+            if (rotateLock && !rotateLockValid()) rotateLock = null;
+            const btn = document.getElementById('btnRotateMode');
+            const info = document.getElementById('rotateInfo');
+            if (!btn || !info) return;
+            btn.classList.toggle('active', !!rotateLock);
+            btn.setAttribute('aria-pressed', rotateLock ? 'true' : 'false');
+            btn.innerText = rotateLock ? '退出旋转' : '启用旋转';
+            if (rotateLock) {
+                info.innerText = `已锁定轮廓；转轴 (${rotateLock.pivot.x.toFixed(1)}, ${rotateLock.pivot.y.toFixed(1)})；本次 ${rotateLastDegrees.toFixed(1)}°`;
+            } else {
+                info.innerText = hasValidSelection() ? '节点已选中，点击启用旋转以锁定所属轮廓' : '先选中图形上的一个节点';
+            }
+        }
+
+        function toggleRotation() {
+            if (rotateLock) {
+                rotateLock = null;
+                rotateLastDegrees = 0;
+            } else {
+                if (!hasValidSelection()) {
+                    alert('请先用「选择或拖动节点」选中要作为转轴的红色节点。');
+                    return;
+                }
+                const indices = getContours().find(contour => contour.includes(selectedNodeIdx));
+                if (!indices) return;
+                const p = nodes[selectedNodeIdx].points[selectedPtIdx];
+                rotateLock = {
+                    nodeList: nodes, indices: indices.slice(), refs: indices.map(idx => nodes[idx]),
+                    selectedIdx: selectedNodeIdx, selectedPt: selectedPtIdx, selectedNode: nodes[selectedNodeIdx],
+                    pivot: { x: p.x, y: p.y }
+                };
+                rotateLastDegrees = 0;
+            }
+            render();
         }
 
         // 把一个节点“提升”为合法的轮廓起点 m：
@@ -1555,7 +2243,7 @@
             ctx.clearRect(0, 0, viewW, viewH);
 
             // 1. Optional Flat Grid Lines (Default Unchecked/Hidden)
-            if (showGrid) {
+            if (!purePreviewMode && showGrid) {
                 ctx.save();
                 ctx.strokeStyle = gridColor;
                 ctx.globalAlpha = gridOpacity;
@@ -1585,7 +2273,7 @@
             }
 
             // 2. Center Axes
-            if (showAxes) {
+            if (!purePreviewMode && showAxes) {
                 ctx.save();
                 ctx.strokeStyle = axesColor;
                 ctx.globalAlpha = 0.7;
@@ -1598,7 +2286,7 @@
             }
 
             // 3. Persistent + Active Smart Alignment Reference Guides
-            if (showGuides) {
+            if (!purePreviewMode && showGuides) {
                 let allGuides = [...persistentGuides, ...currentActiveGuides];
                 if (allGuides.length > 0) {
                     ctx.save();
@@ -1624,7 +2312,7 @@
             }
 
             // 4. Draw Background Image
-            if (bgImg) {
+            if (!purePreviewMode && bgImg) {
                 ctx.save();
                 ctx.globalAlpha = bgImgOpacity;
                 let w = bgImg.width * bgImgScale;
@@ -1674,21 +2362,31 @@
 
                 // Stroke Edge
                 ctx.globalAlpha = 1.0;
-                ctx.strokeStyle = strokeColor;
-                ctx.lineWidth = strokeWidth;
-                ctx.stroke();
+                if (!purePreviewMode) {
+                    ctx.strokeStyle = strokeColor;
+                    ctx.lineWidth = strokeWidth;
+                    ctx.stroke();
+                }
 
                 // 6. Classic ASSDraw3 Bounding Box & Center Crosshair
-                if (showBBox) {
+                if (!purePreviewMode && showBBox) {
                     renderBoundingBoxAndCrosshair();
                 }
 
                 // 7. Render Control Handles
-                renderControlHandles();
+                if (!purePreviewMode) {
+                    renderSelectedSegment();
+                    renderControlHandles();
+                }
+            }
+
+            // 7.5 第 12 项：过点曲线（Catmull-Rom）采样预览，叠加在路径之上
+            if (!purePreviewMode && catmullPoints.length > 0) {
+                drawCatmullPreview();
             }
 
             // 8. Magnetic Snap Indicator Ring
-            if (snappedNodePos) {
+            if (!purePreviewMode && snappedNodePos) {
                 let scrP = worldToScreen(snappedNodePos.x, snappedNodePos.y);
                 ctx.save();
                 ctx.beginPath();
@@ -1701,12 +2399,14 @@
             }
 
             // 9. Draw Coordinate Rulers
-            if (showRulers) {
+            if (!purePreviewMode && showRulers) {
                 renderRulers();
             }
 
             // Keep touchpad status text in sync
             if (typeof updateTouchpadInfo === 'function') updateTouchpadInfo();
+            updateSegmentInfo();
+            updateRotateInfo();
         }
 
         // Classic ASSDraw3 Bounding Box & Center Crosshair
@@ -1928,6 +2628,13 @@
         }
 
         function addCanvasDrawingPoint(mode, worldPt) {
+            // 第 12 项：过点曲线的采样点只进预览缓冲，不碰 nodes，也不写撤销栈
+            if (mode === 'catmull') {
+                catmullPoints.push({ x: worldPt.x, y: worldPt.y });
+                updateCatmullInfo();
+                render();
+                return;
+            }
             saveUndoState();
             if (mode === 'start_m' || nodes.length === 0) {
                 nodes.push(new PathNode('m', [worldPt]));
@@ -1944,7 +2651,8 @@
         }
 
         function beginCanvasSingle(e, point) {
-            const mode = e.button === 1 ? 'pan' : currentMode;
+            // Middle button always pans; pure preview pans instead of editing hidden nodes.
+            const mode = e.button === 1 ? 'pan' : (rotateLockValid() ? 'rotate' : purePreviewMode ? 'pan' : currentMode);
             canvasGesture = {
                 kind: 'single',
                 id: e.pointerId,
@@ -1967,6 +2675,18 @@
 
             if (mode === 'pan') {
                 isDragging = true;
+            } else if (mode === 'rotate') {
+                const pivot = worldToScreen(rotateLock.pivot.x, rotateLock.pivot.y);
+                if (Math.hypot(point.x - pivot.x, point.y - pivot.y) >= 24) {
+                    isDragging = true;
+                    const originals = rotateLock.indices.map(idx => ({
+                        index: idx, points: nodes[idx].points.map(p => ({ x: p.x, y: p.y }))
+                    }));
+                    canvasGesture.rotation = {
+                        originals: originals, previousAngle: Math.atan2(point.y - pivot.y, point.x - pivot.x), totalAngle: 0
+                    };
+                    rotateLastDegrees = 0;
+                }
             } else if (mode === 'move') {
                 selectedNodeIdx = -1;
                 selectedPtIdx = -1;
@@ -2001,10 +2721,10 @@
                     }
                 }
                 isDragging = selectedContourIdx !== -1;
-            } else if (['start_m', 'line', 'bezier'].includes(mode)) {
+            } else if (['start_m', 'line', 'bezier', 'catmull'].includes(mode)) {
+                // 'catmull'（第 12 项）与既有点按工具共用同一条路径：
+                // 手指可能是捏合的前半段，所以触摸时延迟到抬起再确认；笔和鼠标保持按下即落点。
                 const worldPt = screenToWorld(point.x, point.y);
-                // A finger can be the first half of a pinch. Confirm its new point
-                // only on release; pen and mouse keep the original down-to-draw behavior.
                 if (canvasGesture.pointerType === 'touch') canvasGesture.drawPoint = worldPt;
                 else addCanvasDrawingPoint(mode, worldPt);
             }
@@ -2030,6 +2750,22 @@
             contourDragRemainder.y = 0;
             snappedNodePos = null;
             currentActiveGuides = [];
+
+            if (gesture && gesture.mode === 'rotate' && gesture.rotation) {
+                const originals = gesture.rotation.originals;
+                const changed = originals.some(item => item.points.some((p, j) =>
+                    Math.abs(nodes[item.index].points[j].x - p.x) > 1e-6 ||
+                    Math.abs(nodes[item.index].points[j].y - p.y) > 1e-6));
+                if (cancelTouch || !confirmDraw || !changed) {
+                    for (const item of originals) nodes[item.index].points = item.points.map(p => ({ x: p.x, y: p.y }));
+                    rotateLastDegrees = 0;
+                    updateCodeFromNodes(false);
+                } else {
+                    // Preview is a single transaction; the pre-drag snapshot enters undo once.
+                    pendingUndoSnapshot = gesture.snapshot;
+                    commitPendingUndo();
+                }
+            }
 
             if (gesture && gesture.kind === 'single' && gesture.pointerType === 'touch' && nodes === gesture.nodeList) {
                 if (cancelTouch) {
@@ -2130,7 +2866,7 @@
             let activePt = null;
             if (mode === 'move' && hasValidSelection()) {
                 activePt = nodes[selectedNodeIdx].points[selectedPtIdx];
-            } else if (dragging || mode === 'line' || mode === 'bezier') {
+            } else if (dragging || mode === 'line' || mode === 'bezier' || mode === 'catmull') {
                 activePt = screenToWorld(point.x, point.y);
             }
             if (!showGuides || !activePt) return;
@@ -2186,6 +2922,7 @@
             }
 
             if (gesture.id !== e.pointerId) return;
+            // Middle mouse button is recorded on pointerdown; buttons bit 4 stays set on move.
             if (gesture.pointerType !== 'touch' && !(e.buttons & gesture.buttonMask)) {
                 finishCanvasPointer(e, false);
                 return;
@@ -2202,7 +2939,35 @@
             const rawWorldPt = screenToWorld(point.x, point.y);
 
             if (isDragging) {
-                if (gesture.mode === 'pan') {
+                if (gesture.mode === 'rotate' && gesture.rotation) {
+                    const pivot = worldToScreen(rotateLock.pivot.x, rotateLock.pivot.y);
+                    if (Math.hypot(point.x - pivot.x, point.y - pivot.y) >= 12) {
+                        const rot = gesture.rotation;
+                        const angle = Math.atan2(point.y - pivot.y, point.x - pivot.x);
+                        let delta = angle - rot.previousAngle;
+                        if (delta > Math.PI) delta -= 2 * Math.PI;
+                        if (delta < -Math.PI) delta += 2 * Math.PI;
+                        rot.previousAngle = angle;
+                        rot.totalAngle += delta;
+                        const cosA = Math.cos(rot.totalAngle), sinA = Math.sin(rot.totalAngle);
+                        for (const item of rot.originals) {
+                            for (let j = 0; j < item.points.length; j++) {
+                                const p = item.points[j];
+                                const dx = p.x - rotateLock.pivot.x, dy = p.y - rotateLock.pivot.y;
+                                nodes[item.index].points[j] = {
+                                    x: rotateLock.pivot.x + dx * cosA - dy * sinA,
+                                    y: rotateLock.pivot.y + dx * sinA + dy * cosA
+                                };
+                            }
+                        }
+                        rotateLastDegrees = rot.totalAngle * 180 / Math.PI;
+                        currentActiveGuides = [];
+                        updateCodeFromNodes(false);
+                    }
+                    render();
+                    updateCanvasPointerInfo(point);
+                    return;
+                } else if (gesture.mode === 'pan') {
                     offsetX += dxScreen;
                     offsetY += dyScreen;
                 } else if (gesture.mode === 'move' && hasValidSelection()) {
@@ -2225,7 +2990,10 @@
                     const curPt = nodes[selectedNodeIdx].points[selectedPtIdx];
                     if (curPt.x !== finalWorldPt.x || curPt.y !== finalWorldPt.y) {
                         noteCanvasEdit();
+                        // 第 13 项：记下移动前的位置，供「拖锚点时两侧控制柄跟随」使用
+                        const prevPt = { x: curPt.x, y: curPt.y };
                         nodes[selectedNodeIdx].points[selectedPtIdx] = finalWorldPt;
+                        applyHandleLink(selectedNodeIdx, selectedPtIdx, prevPt);
                         updateCodeFromNodes(false);
                     }
                 } else if (gesture.mode === 'move_contour' && selectedContourIdx !== -1) {
@@ -2334,12 +3102,14 @@
         document.getElementById('toolStartM').onclick = function() { setToolMode('start_m', this); };
         document.getElementById('toolLine').onclick = function() { setToolMode('line', this); };
         document.getElementById('toolBezier').onclick = function() { setToolMode('bezier', this); };
+        document.getElementById('toolCatmull').onclick = function() { setToolMode('catmull', this); };
         document.getElementById('toolPan').onclick = function() { setToolMode('pan', this); };
 
         function setToolMode(mode, btnEl) {
             currentMode = mode;
+            if (rotateLock) { rotateLock = null; rotateLastDegrees = 0; }
             document.querySelectorAll('.toolbar .btn').forEach(b => {
-                if (['toolMove', 'toolMoveContour', 'toolStartM', 'toolLine', 'toolBezier', 'toolPan'].includes(b.id)) {
+                if (['toolMove', 'toolMoveContour', 'toolStartM', 'toolLine', 'toolBezier', 'toolCatmull', 'toolPan'].includes(b.id)) {
                     b.classList.remove('active');
                 }
             });
@@ -2352,6 +3122,62 @@
         document.getElementById('btnRedo').onclick = redo;
         document.getElementById('btnDeleteNode').onclick = deleteSelectedNode;
         document.getElementById('btnReverseContourSide').onclick = reverseSelectedContour;
+
+        // ===== 第 12 项：过点曲线面板绑定 =====
+        document.getElementById('catmullTension').oninput = function(e) {
+            catmullTension = parseFloat(e.target.value);
+            if (!Number.isFinite(catmullTension)) catmullTension = 0.5;
+            document.getElementById('catmullTensionText').innerText = catmullTension.toFixed(2);
+            updateCatmullInfo();
+            render();
+        };
+        document.getElementById('chkCatmullClosed').onchange = function(e) {
+            catmullClosed = e.target.checked;
+            updateCatmullInfo();
+            render();
+        };
+        document.getElementById('btnCatmullUndoPt').onclick = popCatmullPoint;
+        document.getElementById('btnCatmullCancel').onclick = cancelCatmullCurve;
+        document.getElementById('btnCatmullFinish').onclick = commitCatmullCurve;
+        // 采样过程中按 Enter 也可完成（输入框内不触发）
+        window.addEventListener('keydown', (e) => {
+            if (e.target instanceof Element && e.target.matches('input, textarea, select, [contenteditable="true"]')) return;
+            if (e.key === 'Enter' && catmullPoints.length >= 2) {
+                e.preventDefault();
+                commitCatmullCurve();
+            }
+        });
+
+        // ===== 第 13 项：控制柄联动面板绑定 =====
+        document.getElementById('handleModeSelect').onchange = function(e) {
+            handleLinkMode = e.target.value;
+        };
+        document.getElementById('btnSmoothAnchor').onclick = function() {
+            if (!hasValidSelection()) {
+                alert('请先用「选择或拖动节点」工具在画布上选中一个锚点或控制柄。');
+                return;
+            }
+            const anchorIdx = anchorNodeIndexOf(selectedNodeIdx, selectedPtIdx);
+            if (anchorIdx < 0) {
+                alert('没有找到与所选点对应的锚点（该控制柄所在段的前一段可能不存在）。');
+                return;
+            }
+            const handles = getAnchorHandles(anchorIdx);
+            if (!handles.some(h => h.ptIdx === 0) || !handles.some(h => h.ptIdx === 1)) {
+                alert('该锚点两侧缺少可联动的控制柄：需要它的前后两段都是贝塞尔曲线 (b)。');
+                return;
+            }
+            saveUndoState();
+            if (!smoothAnchorNode(anchorIdx, handleLinkMode === 'symmetric')) {
+                alert('两侧控制柄完全重合，无法判断切线方向，请先把其中一个柄拉开一点。');
+                return;
+            }
+            updateCodeFromNodes(false);
+            render();
+        };
+
+        document.getElementById('btnConvertSegment').onclick = convertSegmentAtSelection;
+        document.getElementById('btnRotateMode').onclick = toggleRotation;
 
         // Manual One-Tap Snap Button (for touch / stylus users whose pen tip
         // visually covers the node, making it hard to confirm auto-snapping)
@@ -2390,7 +3216,10 @@
             }
 
             saveUndoState();
+            // 第 13 项：吸附同样算一次移动，记下旧位置让控制柄跟随
+            const prevSnapPt = { x: curPt.x, y: curPt.y };
             nodes[selectedNodeIdx].points[selectedPtIdx] = { x: bestPt.x, y: bestPt.y };
+            applyHandleLink(selectedNodeIdx, selectedPtIdx, prevSnapPt);
             snappedNodePos = { x: bestPt.x, y: bestPt.y };
             updateCodeFromNodes(false);
             render();
@@ -2627,7 +3456,10 @@
             const cur = nodes[selectedNodeIdx].points[selectedPtIdx];
             if (cur.x !== finalPt.x || cur.y !== finalPt.y) {
                 if (!tpUndoSaved) { saveUndoState(); tpUndoSaved = true; }
+                // 第 13 项：触控板移动同样触发控制柄联动
+                const prevPt = { x: cur.x, y: cur.y };
                 nodes[selectedNodeIdx].points[selectedPtIdx] = finalPt;
+                applyHandleLink(selectedNodeIdx, selectedPtIdx, prevPt);
                 updateCodeFromNodes(false);
             }
             computeGuidesFor(nodes[selectedNodeIdx].points[selectedPtIdx]);
@@ -2755,9 +3587,60 @@
             parseAssCode(document.getElementById('assCodeInput').value);
         };
 
-        document.getElementById('btnCopyCode').onclick = function() {
-            navigator.clipboard.writeText(document.getElementById('assCodeInput').value);
+        document.getElementById('btnCopyCode').onclick = async function() {
+            const input = document.getElementById('assCodeInput');
+            try {
+                if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard API');
+                await navigator.clipboard.writeText(input.value);
+            } catch (err) {
+                input.focus();
+                input.select();
+                let copied = false;
+                try { copied = !!document.execCommand && document.execCommand('copy'); } catch (copyErr) {}
+                if (!copied) {
+                    alert('自动复制失败，请长按代码输入框并手动复制。');
+                    return;
+                }
+            }
             alert('ASS 矢量代码已复制到剪贴板！');
+        };
+
+        // Precision switching is explicit: do not silently overwrite unparsed edits.
+        document.getElementById('assPrecisionSelect').onchange = function() {
+            const input = document.getElementById('assCodeInput');
+            if (input.value.trim() && input.value !== lastGeneratedAssCode &&
+                !confirm('输入框中的手动修改尚未解析。切换精度将重新生成代码并覆盖这些修改，确定继续？')) {
+                this.value = previousAssPrecision;
+                return;
+            }
+            previousAssPrecision = this.value;
+            updateCodeFromNodes(false);
+        };
+
+        document.getElementById('btnDownloadCode').onclick = function() {
+            const text = document.getElementById('assCodeInput').value;
+            if (!text.trim()) { alert('输入框没有可下载的矢量代码。'); return; }
+            const now = new Date();
+            const stamp = now.getFullYear().toString() +
+                (now.getMonth() + 1).toString().padStart(2, '0') +
+                now.getDate().toString().padStart(2, '0') + '_' +
+                now.getHours().toString().padStart(2, '0') +
+                now.getMinutes().toString().padStart(2, '0') +
+                now.getSeconds().toString().padStart(2, '0');
+            const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${stamp}_assdraw_code.txt`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        };
+
+        document.getElementById('btnClearCode').onclick = function() {
+            const input = document.getElementById('assCodeInput');
+            if (input.value && confirm('只清空代码输入框（不会清空画布），确定吗？')) {
+                input.value = '';
+                input.focus();
+            }
         };
 
         // Style Settings
@@ -2769,6 +3652,12 @@
         document.getElementById('fillOpacity').oninput = function(e) { fillOpacity = parseFloat(e.target.value); render(); };
         document.getElementById('strokeColor').oninput = function(e) { strokeColor = e.target.value; render(); };
         document.getElementById('strokeWidth').oninput = function(e) { strokeWidth = parseInt(e.target.value); render(); };
+        document.getElementById('chkPurePreview').onchange = function(e) {
+            purePreviewMode = e.target.checked;
+            if (purePreviewMode) { rotateLock = null; rotateLastDegrees = 0; }
+            container.classList.toggle('pure-preview', purePreviewMode);
+            render();
+        };
         document.getElementById('chkShowGuides').onchange = function(e) { showGuides = e.target.checked; render(); };
         document.getElementById('guideColor').oninput = function(e) { guideColor = e.target.value; render(); };
         document.getElementById('chkShowBBox').onchange = function(e) { showBBox = e.target.checked; render(); };
@@ -2806,6 +3695,9 @@
                 snappedNodePos = null;
                 persistentGuides = [];
                 currentActiveGuides = [];
+                // 第 12 项：未完成的过点曲线采样一并清空
+                catmullPoints = [];
+                updateCatmullInfo();
                 updateCodeFromNodes(false);
                 render();
             }
@@ -3038,6 +3930,281 @@
         // Initialize Canvas and Demo
         resizeCanvas();
         initDemoPath();
+        // 第 12 项：初始化过点曲线面板的状态文字
+        updateCatmullInfo();
+    </script>
+
+    <script>
+        // Parameter tools append ordinary ASS nodes without replacing baseline functions.
+        (function initGeometryTools() {
+            const typeSelect = document.getElementById('geometryType');
+            const KAPPA = 4 * (Math.sqrt(2) - 1) / 3;
+            const point = (x, y) => ({ x: x, y: y });
+            const move = (x, y) => new PathNode('m', [point(x, y)]);
+            const line = (x, y) => new PathNode('l', [point(x, y)]);
+            const curve = (x1, y1, x2, y2, x3, y3) => new PathNode('b', [
+                point(x1, y1), point(x2, y2), point(x3, y3)
+            ]);
+
+            function readNumber(id, name) {
+                const input = document.getElementById(id);
+                const value = input.value.trim() === '' ? NaN : Number(input.value);
+                if (!Number.isFinite(value)) {
+                    input.focus();
+                    throw new Error(name + '必须填写有效的有限数值。');
+                }
+                return value;
+            }
+
+            function readPositive(id, name) {
+                const value = readNumber(id, name);
+                if (value <= 0) {
+                    document.getElementById(id).focus();
+                    throw new Error(name + '必须大于 0。');
+                }
+                return value;
+            }
+
+            function updateFields() {
+                const isRect = typeSelect.value === 'rounded_rect';
+                const isArc = typeSelect.value === 'arc';
+                document.getElementById('geometryRadialFields').hidden = isRect;
+                document.getElementById('geometryRectFields').hidden = !isRect;
+                document.getElementById('geometryArcFields').hidden = !isArc;
+                document.getElementById('geometryArcHint').hidden = !isArc;
+            }
+
+            // Exact cardinal endpoints; four cubic quarter-arcs share the same tangent ratio.
+            function makeCircle(cx, cy, radius) {
+                const d = radius * KAPPA;
+                return [
+                    move(cx + radius, cy),
+                    curve(cx + radius, cy + d, cx + d, cy + radius, cx, cy + radius),
+                    curve(cx - d, cy + radius, cx - radius, cy + d, cx - radius, cy),
+                    curve(cx - radius, cy - d, cx - d, cy - radius, cx, cy - radius),
+                    curve(cx + d, cy - radius, cx + radius, cy - d, cx + radius, cy)
+                ];
+            }
+
+            function makeRoundedRect(x, y, width, height, radius) {
+                const right = x + width;
+                const bottom = y + height;
+                if (radius === 0) {
+                    return [move(x, y), line(right, y), line(right, bottom), line(x, bottom), line(x, y)];
+                }
+                const d = radius * KAPPA;
+                const result = [move(x + radius, y)];
+                function lineTo(px, py) {
+                    const last = result[result.length - 1].points;
+                    const end = last[last.length - 1];
+                    if (end.x !== px || end.y !== py) result.push(line(px, py));
+                }
+                lineTo(right - radius, y);
+                result.push(curve(right - radius + d, y, right, y + radius - d, right, y + radius));
+                lineTo(right, bottom - radius);
+                result.push(curve(right, bottom - radius + d, right - radius + d, bottom, right - radius, bottom));
+                lineTo(x + radius, bottom);
+                result.push(curve(x + radius - d, bottom, x, bottom - radius + d, x, bottom - radius));
+                lineTo(x, y + radius);
+                result.push(curve(x, y + radius - d, x + radius - d, y, x + radius, y));
+                return result;
+            }
+
+            function makeArc(cx, cy, radius, startDegrees, sweepDegrees) {
+                const start = (startDegrees % 360) * Math.PI / 180;
+                const count = Math.max(1, Math.ceil(Math.abs(sweepDegrees) / 90));
+                const step = sweepDegrees * Math.PI / 180 / count;
+                if (step === 0) throw new Error('扫过角度过小，无法计算圆弧，请增大角度后重试。');
+                const first = point(cx + radius * Math.cos(start), cy + radius * Math.sin(start));
+                const result = [move(first.x, first.y)];
+                // Each segment spans at most 90 degrees, including negative sweeps.
+                const handleLength = radius * ((4 / 3) * Math.tan(step / 4));
+                for (let i = 0; i < count; i++) {
+                    const a = start + i * step;
+                    const b = start + (i + 1) * step;
+                    const p0 = point(cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+                    const p3 = point(cx + radius * Math.cos(b), cy + radius * Math.sin(b));
+                    const segment = curve(
+                        p0.x - handleLength * Math.sin(a), p0.y + handleLength * Math.cos(a),
+                        p3.x + handleLength * Math.sin(b), p3.y - handleLength * Math.cos(b),
+                        p3.x, p3.y
+                    );
+                    if (i === count - 1 && Math.abs(sweepDegrees) === 360) {
+                        segment.points[2] = point(first.x, first.y);
+                    }
+                    result.push(segment);
+                }
+                return result;
+            }
+
+            document.getElementById('btnGeometryCenter').addEventListener('click', () => {
+                const center = screenToWorld(viewW / 2, viewH / 2);
+                try {
+                    if (typeSelect.value === 'rounded_rect') {
+                        const width = readPositive('geometryWidth', '矩形宽度');
+                        const height = readPositive('geometryHeight', '矩形高度');
+                        document.getElementById('geometryRectX').value = String(center.x - width / 2);
+                        document.getElementById('geometryRectY').value = String(center.y - height / 2);
+                    } else {
+                        document.getElementById('geometryCX').value = String(center.x);
+                        document.getElementById('geometryCY').value = String(center.y);
+                    }
+                } catch (err) {
+                    alert(err.message);
+                }
+            });
+
+            document.getElementById('btnAddGeometry').addEventListener('click', () => {
+                let shape;
+                let clampedCorner = null;
+                try {
+                    if (typeSelect.value === 'rounded_rect') {
+                        const x = readNumber('geometryRectX', '矩形左上角 X');
+                        const y = readNumber('geometryRectY', '矩形左上角 Y');
+                        const width = readPositive('geometryWidth', '矩形宽度');
+                        const height = readPositive('geometryHeight', '矩形高度');
+                        const corner = readNumber('geometryCorner', '圆角半径');
+                        if (corner < 0) throw new Error('圆角半径不能小于 0。');
+                        clampedCorner = Math.min(corner, width / 2, height / 2);
+                        shape = makeRoundedRect(x, y, width, height, clampedCorner);
+                    } else {
+                        const cx = readNumber('geometryCX', '圆心 X');
+                        const cy = readNumber('geometryCY', '圆心 Y');
+                        const radius = readPositive('geometryRadius', '半径');
+                        if (typeSelect.value === 'circle') {
+                            shape = makeCircle(cx, cy, radius);
+                        } else if (typeSelect.value === 'arc') {
+                            const start = readNumber('geometryStart', '起始角度');
+                            const sweep = readNumber('geometrySweep', '扫过角度');
+                            if (sweep === 0 || Math.abs(sweep) > 360) {
+                                throw new Error('扫过角度必须在 -360 到 360 度之间，且不能为 0。');
+                            }
+                            shape = makeArc(cx, cy, radius, start, sweep);
+                        } else {
+                            throw new Error('请选择圆、圆角矩形或圆弧。');
+                        }
+                    }
+                    if (!shape.every(n => n.points.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)))) {
+                        throw new Error('图形坐标超出了数值范围，请调小尺寸或坐标后重试。');
+                    }
+                } catch (err) {
+                    alert(err.message);
+                    return;
+                }
+
+                // One complete shape is one undo step; no styles or closure flags are changed.
+                stopCanvasInteraction(true);
+                endTouchpadStroke(true);
+                saveUndoState();
+                const firstIdx = nodes.length;
+                nodes.push(...shape);
+                selectedNodeIdx = firstIdx;
+                selectedPtIdx = 0;
+                selectedContourIdx = getContours().length - 1;
+                snappedNodePos = null;
+                currentActiveGuides = [];
+                if (clampedCorner !== null) document.getElementById('geometryCorner').value = String(clampedCorner);
+                updateCodeFromNodes(false);
+                render();
+            });
+
+            typeSelect.addEventListener('change', updateFields);
+            updateFields();
+        })();
+    </script>
+
+    <script>
+        (function initAssCodeFloat() {
+            const wrap = document.getElementById('assWrap');
+            const dock = document.getElementById('assDock');
+            const header = document.getElementById('assHeader');
+            const resize = document.getElementById('assResize');
+            const button = document.getElementById('btnAssFloat');
+            let floating = false, rect = null;
+
+            function clamp() {
+                if (!floating || !rect) return;
+                const maxW = Math.max(1, window.innerWidth - 8);
+                const maxH = Math.max(1, window.innerHeight - 8);
+                rect.width = Math.min(maxW, Math.max(Math.min(260, maxW), rect.width));
+                rect.height = Math.min(maxH, Math.max(Math.min(300, maxH), rect.height));
+                rect.left = Math.max(0, Math.min(rect.left, window.innerWidth - rect.width));
+                rect.top = Math.max(0, Math.min(rect.top, window.innerHeight - rect.height));
+                wrap.style.left = rect.left + 'px';
+                wrap.style.top = rect.top + 'px';
+                wrap.style.width = rect.width + 'px';
+                wrap.style.height = rect.height + 'px';
+            }
+
+            function saveRect() {
+                if (rect) Prefs.setJSON('asscode.rect', rect);
+            }
+
+            function setFloating(on) {
+                floating = on;
+                if (on) {
+                    document.body.appendChild(wrap);
+                    wrap.classList.add('floating');
+                    if (!rect) {
+                        const area = container.getBoundingClientRect();
+                        rect = { left: area.left + 16, top: area.top + 16, width: 360, height: 330 };
+                    }
+                    clamp();
+                    button.innerText = '停靠';
+                    saveRect();
+                } else {
+                    wrap.classList.remove('floating');
+                    wrap.style.left = wrap.style.top = wrap.style.width = wrap.style.height = '';
+                    dock.appendChild(wrap);
+                    button.innerText = '悬浮';
+                }
+                Prefs.setBool('asscode.floating', on);
+            }
+
+            function bind(handle, mode) {
+                let pointerId = null, origin, start;
+                handle.addEventListener('pointerdown', e => {
+                    if (!floating || (mode === 'move' && e.target.closest('button'))) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    pointerId = e.pointerId;
+                    origin = { x: e.clientX, y: e.clientY };
+                    start = { ...rect };
+                    try { handle.setPointerCapture(pointerId); } catch (err) {}
+                });
+                handle.addEventListener('pointermove', e => {
+                    if (e.pointerId !== pointerId) return;
+                    e.preventDefault();
+                    const dx = e.clientX - origin.x, dy = e.clientY - origin.y;
+                    if (mode === 'move') {
+                        rect.left = start.left + dx;
+                        rect.top = start.top + dy;
+                    } else {
+                        rect.width = start.width + dx;
+                        rect.height = start.height + dy;
+                    }
+                    clamp();
+                });
+                const stop = e => {
+                    if (e.pointerId !== pointerId) return;
+                    pointerId = null;
+                    saveRect();
+                };
+                handle.addEventListener('pointerup', stop);
+                handle.addEventListener('pointercancel', stop);
+                handle.addEventListener('lostpointercapture', stop);
+            }
+            bind(header, 'move');
+            bind(resize, 'resize');
+            window.addEventListener('resize', clamp);
+            button.onclick = () => setFloating(!floating);
+
+            const saved = Prefs.getJSON('asscode.rect', null);
+            if (saved && ['left', 'top', 'width', 'height'].every(k => Number.isFinite(saved[k]))) {
+                rect = { left: saved.left, top: saved.top, width: saved.width, height: saved.height };
+            }
+            if (Prefs.getBool('asscode.floating', false)) setFloating(true);
+        })();
     </script>
 </body>
 </html>
